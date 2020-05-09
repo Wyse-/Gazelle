@@ -6,10 +6,10 @@ services:
     ports:
       - 8080:80
       - 36000:3306
-      - 34000:34000
     depends_on:
       - memcached
       - mysql
+      - ocelot
     volumes:
       - .:/var/www
       - /var/www/vendor
@@ -42,3 +42,15 @@ services:
     volumes:
       - ./.docker/data/sphinxsearch:/var/lib/sphinxsearch/data/
       - ./.docker/sphinxsearch/sphinx.conf:/var/lib/sphinxsearch/conf/sphinx.conf
+
+  ocelot:
+    build: ./.docker/ocelot
+    ports:
+      - 2710:2710
+      - 34000:34000
+    depends_on:
+      - mysql
+      - memcached
+    volumes:
+      - ./.docker/ocelot/ocelot.conf:/srv/ocelot.conf
+      - ./.docker/ocelot/crontab:/srv/crontab

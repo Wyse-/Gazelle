@@ -1,0 +1,3 @@
+[submodule ".docker/ocelot"]
+	path = .docker/ocelot
+	url = https://github.com/Wyse-/Ocelot.git
