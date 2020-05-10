@@ -19,6 +19,10 @@ services:
       # These should match what you set for your mysql container below
       - MYSQL_USER=gazelle
       - MYSQL_PASSWORD=password
+      - TRACKER_HOST=ocelot
+      - TRACKER_PORT=34000
+      - TRACKER_SECRET=u7D7pw5UVxXuax6Pr34FwqnOA80pZ7S8
+      - TRACKER_REPORTKEY=YShGZfS8PS6ucIE6YXc7Jo9dyzWbyvBa
 
   memcached:
     image: memcached:1.5-alpine
