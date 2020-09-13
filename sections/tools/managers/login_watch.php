@@ -5,14 +5,16 @@ if (!check_perms('admin_login_watch')) {
 
 if (isset($_POST['submit']) && isset($_POST['id']) && $_POST['submit'] == 'Unban' && is_number($_POST['id'])) {
     authorize();
-    $DB->query('
+    $DB->prepared_query("
         DELETE FROM login_attempts
-        WHERE ID = '.$_POST['id']);
+        WHERE ID = ?
+        ", (int)$_POST['id']
+    );
 }
 
 View::show_header('Login Watch');
 
-$DB->query('
+$DB->prepared_query('
     SELECT
         ID,
         IP,
@@ -22,7 +24,7 @@ $DB->query('
         BannedUntil,
         Bans
     FROM login_attempts
-    WHERE BannedUntil > "'.sqltime().'"
+    WHERE (BannedUntil > now() OR LastAttempt > now() - INTERVAL 6 HOUR)
     ORDER BY BannedUntil ASC');
 ?>
 <div class="thin">
@@ -89,4 +91,5 @@ if (check_perms('admin_manage_ipbans')) { ?>
 ?>
     </table>
 </div>
-<?php View::show_footer(); ?>
+<?php
+View::show_footer();

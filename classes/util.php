@@ -76,7 +76,7 @@ function display_str($Str) {
         return '';
     }
     if ($Str != '' && !is_number($Str)) {
-        $Str = Format::make_utf8($Str);
+        $Str = make_utf8($Str);
         $Str = mb_convert_encoding($Str, 'HTML-ENTITIES', 'UTF-8');
         $Str = preg_replace("/&(?![A-Za-z]{0,4}\w{2,3};|#[0-9]{2,6};)/m", '&amp;', $Str);
 
@@ -190,6 +190,11 @@ function json_die($Status, $Message="bad parameters") {
  * Print JSON status result with an optional message.
  */
 function json_print($Status, $Message) {
+    if (check_perms('site_debug')) {
+        global $Debug;
+        $Message['queries'] = $Debug->get_queries();
+        $Message['searches'] = $Debug->get_sphinxql_queries();
+    }
     if ($Status == 'success' && $Message) {
         print json_encode(['status' => $Status, 'response' => $Message]);
     } elseif ($Message) {
@@ -245,4 +250,85 @@ function unserialize_array($array) {
  */
 function isset_array_checked($array, $value) {
     return (isset($array[$value])) ? "checked" : "";
+}
+
+/**
+ * Helper function to return an string of N elements from an array.
+ *
+ * (e.g. [2, 4, 6] into a list of query placeholders (e.g. '?,?,?')
+ * By default '?' is used, but a custom placeholder may be specified,
+ * such as '(?)' or '(?, now(), 100)', for use in a bulk insert.
+ *
+ * @param array $list The list of elements
+ * @param string $placeholder ('?' by default).
+ * @return string The resulting placeholder string.
+ */
+function placeholders(array $list, $placeholder = '?') {
+    return implode(',', array_fill(0, count($list), $placeholder));
+}
+
+/**
+ * Magical function.
+ *
+ * @param string $Str function to detect encoding on.
+ * @return true if the string is in UTF-8.
+ */
+function is_utf8($Str) {
+    return preg_match('%^(?:
+        [\x09\x0A\x0D\x20-\x7E]              // ASCII
+        | [\xC2-\xDF][\x80-\xBF]             // non-overlong 2-byte
+        | \xE0[\xA0-\xBF][\x80-\xBF]         // excluding overlongs
+        | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  // straight 3-byte
+        | \xED[\x80-\x9F][\x80-\xBF]         // excluding surrogates
+        | \xF0[\x90-\xBF][\x80-\xBF]{2}      // planes 1-3
+        | [\xF1-\xF3][\x80-\xBF]{3}          // planes 4-15
+        | \xF4[\x80-\x8F][\x80-\xBF]{2}      // plane 16
+        )*$%xs', $Str
+    );
+}
+
+/**
+ * Detect the encoding of a string and transform it to UTF-8.
+ *
+ * @param string $Str
+ * @return UTF-8 encoded version of $Str
+ */
+function make_utf8($Str) {
+    if ($Str != '') {
+        if (is_utf8($Str)) {
+            $Encoding = 'UTF-8';
+        }
+        if (empty($Encoding)) {
+            $Encoding = mb_detect_encoding($Str, 'UTF-8, ISO-8859-1');
+        }
+        if (empty($Encoding)) {
+            $Encoding = 'ISO-8859-1';
+        }
+        if ($Encoding == 'UTF-8') {
+            return $Str;
+        } else {
+            return @mb_convert_encoding($Str, 'UTF-8', $Encoding);
+        }
+    }
+}
+
+/*
+ * Generate a random string drawn from alphanumeric characters
+ * but omitting lowercase l, uppercase I and O (to avoid confusion).
+ *
+ * @param  int    $length
+ * @return string random alphanumeric string
+ */
+function randomString($len = 32) {
+    $alphabet = str_split('abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ0123456789');
+    $max = count($alphabet);
+    $mask = (int)pow(2, ceil(log($size, 2))) - 1;
+    $out = '';
+    while (strlen($out) < $len) {
+        $n = ord(openssl_random_pseudo_bytes(1)) & $mask;
+        if ($n < $max) {
+            $out .= $alphabet[$n];
+        }
+    }
+    return $out;
 }

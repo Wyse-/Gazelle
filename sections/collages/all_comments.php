@@ -23,18 +23,19 @@ $DB->query("
     FROM collages
     WHERE ID = '$CollageID'");
 list($Name) = $DB->next_record();
-
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
 // Start printing
 View::show_header("Comments for collage $Name", 'comments,bbcode,subscriptions');
 ?>
 <div class="thin">
     <div class="header">
         <h2>
-            <a href="collages.php">Collages</a> &gt;
+            <a href="collages.php">Collages</a> &rsaquo;
             <a href="collages.php?id=<?=$CollageID?>"><?=$Name?></a>
         </h2>
         <div class="linkbox">
-            <a href="#" id="subscribelink_collages<?=$CollageID?>" class="brackets" onclick="SubscribeComments('collages', <?=$CollageID?>); return false;"><?=Subscriptions::has_subscribed_comments('collages', $CollageID) !== false ? 'Unsubscribe' : 'Subscribe'?></a>
+            <a href="#" id="subscribelink_collages<?=$CollageID?>" class="brackets" onclick="SubscribeComments('collages', <?=$CollageID?>); return false;"><?=
+                $subscription->isSubscribedComments('collages', $CollageID) ? 'Unsubscribe' : 'Subscribe'?></a>
 <?php
 $Pages = Format::get_pages($Page, $NumComments, TORRENT_COMMENTS_PER_PAGE, 9);
 if ($Pages) {

@@ -92,7 +92,7 @@ View::show_header("Top $Limit Voted Groups",'browse,voting');
 <div class="thin">
     <div class="header">
         <h2>Top <?=$Limit?> Voted Groups</h2>
-        <?php Top10View::render_linkbox("votes"); ?>
+        <?php \Gazelle\Top10::renderLinkbox("votes"); ?>
     </div>
 <?php
 
@@ -127,7 +127,7 @@ if (check_perms('site_advanced_top10')) { ?>
 <?php
 }
 
-$Bookmarks = Bookmarks::all_bookmarks('torrent');
+$bookmark = new \Gazelle\Bookmark;
 ?>
     <h3>Top <?=$Limit?>
 <?php
@@ -172,7 +172,7 @@ foreach ($TopVotes as $GroupID => $Group) {
     $Score = $Group['Score'];
     $DownVotes = $TotalVotes - $UpVotes;
 
-    $IsBookmarked = in_array($GroupID, $Bookmarks);
+    $IsBookmarked = $bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID);
     $UserVote = isset($UserVotes[$GroupID]) ? $UserVotes[$GroupID]['Type'] : '';
 
     $DisplayName = "$Group[Rank] - ";

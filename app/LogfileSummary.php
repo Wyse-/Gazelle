@@ -3,6 +3,7 @@
 namespace Gazelle;
 
 class LogfileSummary {
+    /** @var Logfile[] */
     protected $list;
     protected $allChecksum;
     protected $lowestScore;
@@ -14,11 +15,15 @@ class LogfileSummary {
     public function add (Logfile $log) {
         $this->list[] = $log;
         $this->allChecksum = is_null($this->allChecksum)
-            ? $this->allChecksum
+            ? $log->checksum()
             : $this->allChecksum && $log->checksum();
         $this->lowestScore = is_null($this->lowestScore)
-            ? $this->lowestScore
+            ? $log->score()
             : min($this->lowestScore, $log->score());
+    }
+
+    public function checksum () {
+        return $this->allChecksum;
     }
 
     public function checksumStatus () {

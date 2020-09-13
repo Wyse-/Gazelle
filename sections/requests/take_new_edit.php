@@ -32,7 +32,7 @@ if ($NewRequest) {
     $VoteCount = count($VoteArray['Voters']);
     $IsFilled = !empty($Request['TorrentID']);
     $CategoryName = $CategoriesV2[$Request['CategoryID'] - 1];
-    $CanEdit = ((!$IsFilled && $LoggedUser['ID'] === $Request['UserID'] && $VoteCount < 2) || check_perms('site_moderate_requests'));
+    $CanEdit = ((!$IsFilled && $LoggedUser['ID'] == $Request['UserID'] && $VoteCount < 2) || check_perms('site_moderate_requests'));
 
     if (!$CanEdit) {
         error(403);
@@ -354,6 +354,7 @@ if ($GroupID) {
  * 3. Create a row in the requests_artists table for each artist, based on the ID.
  */
 
+$ArtistManager = new \Gazelle\Manager\Artist;
 foreach ($ArtistForm as $Importance => $Artists) {
     foreach ($Artists as $Num => $Artist) {
         //1. See if each artist given already exists and if it does, grab the ID.
@@ -377,18 +378,7 @@ foreach ($ArtistForm as $Importance => $Artists) {
         }
         if (!$ArtistID) {
             //2. For each artist that didn't exist, create an artist.
-            $DB->prepared_query('
-                INSERT INTO artists_group (Name)
-                VALUES (?)', $Artist['name']);
-            $ArtistID = $DB->inserted_id();
-
-            $Cache->increment('stats_artist_count');
-
-            $DB->prepared_query('
-                INSERT INTO artists_alias (ArtistID, Name)
-                VALUES (?, ?)', $ArtistID, $Artist['name']);
-            $AliasID = $DB->inserted_id();
-
+            list($ArtistID, $AliasID) = $ArtistManager->createArtist($Artist['name']);
             $ArtistForm[$Importance][$Num] = ['id' => $ArtistID, 'aliasid' => $AliasID, 'name' => $Artist['name']];
         }
     }
@@ -414,28 +404,12 @@ if (!$NewRequest) {
         WHERE RequestID = ?', $RequestID);
 }
 
+$tagMan = new \Gazelle\Manager\Tag;
 $Tags = array_unique(explode(',', $Tags));
 foreach ($Tags as $Index => $Tag) {
-    $Tag = Misc::sanitize_tag($Tag);
-    $Tag = Misc::get_alias_tag($Tag);
-    $Tags[$Index] = $Tag; //For announce
-    $DB->prepared_query('
-        INSERT INTO tags
-            (Name, UserID)
-        VALUES
-            (?, ?)
-        ON DUPLICATE KEY UPDATE
-            Uses = Uses + 1',
-            $Tag, $LoggedUser['ID']);
-
-    $TagID = $DB->inserted_id();
-
-    $DB->prepared_query('
-        INSERT IGNORE INTO requests_tags
-            (TagID, RequestID)
-        VALUES
-            (?, ?)',
-        $TagID, $RequestID);
+    $TagID = $tagMan->create($Tag, $LoggedUser['ID']);
+    $tagMan->createRequestTag($TagID, $RequestID);
+    $Tags[$Index] = $tagMan->name($TagID); // For announce, may have been aliased
 }
 
 if ($NewRequest) {

@@ -58,73 +58,75 @@ $Debug->handle_errors();
 $Debug->set_flag('Debug constructed');
 
 $DB = new DB_MYSQL;
-$Cache = new CACHE($MemcachedServers);
+$Debug->set_flag('DB constructed');
+
+$Cache = new CACHE;
+$Debug->set_flag('Memcached constructed');
 
 G::$Cache = $Cache;
 G::$DB = $DB;
 G::$Twig = new Environment(
     new FilesystemLoader(__DIR__ . '/../templates'),
-    ['cache' => __DIR__ . '/../cache/twig']
+    [
+        'debug' => DEBUG_MODE,
+        'cache' => __DIR__ . '/../cache/twig'
+    ]
 );
 
-//Begin browser identification
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+G::$Twig->addFilter(new \Twig\TwigFilter(
+    'number_format',
+    function ($text) {
+        return number_format($text);
+    }
+));
 
-if (!isset($_SESSION['WhichBrowser'])) {
-    $Debug->set_flag('start parsing user agent');
-    if (preg_match("/^Lidarr\/([0-9\.]+) \((.+)\)$/", $_SERVER['HTTP_USER_AGENT'], $Matches) === 1) {
-        $OS = explode(" ", $Matches[2]);
-        $_SESSION['WhichBrowser'] = [
-            'Browser' => 'Lidarr',
-            'BrowserVersion' => substr($Matches[1], 0, strrpos($Matches[1], '.')),
-            'OperatingSystem' => $OS[0] === 'macos' ? 'macOS' : ucfirst($OS[0]),
-            'OperatingSystemVersion' => $OS[1] ?? null
-        ];
+G::$Twig->addFilter(new \Twig\TwigFilter(
+    'checked',
+    function ($isChecked) {
+        return $isChecked ? ' checked="checked"' : '';
     }
-    elseif (preg_match("/^VarroaMusica\/([0-9]+(?:dev)?)$/", $_SERVER['HTTP_USER_AGENT'], $Matches) === 1) {
-        $_SESSION['WhichBrowser'] = [
-            'Browser' => 'VarroaMusica',
-            'BrowserVersion' => str_replace('dev', '', $Matches[1]),
-            'OperatingSystem' => null,
-            'OperatingSystemVersion' => null
-        ];
-    }
-    elseif (in_array($_SERVER['HTTP_USER_AGENT'], ['Headphones/None', 'whatapi [isaaczafuta]'])) {
-        $_SESSION['WhichBrowser'] = [
-            'Browser' => $_SERVER['HTTP_USER_AGENT'],
-            'BrowserVersion' => null,
-            'OperatingSystem' => null,
-            'OperatingSystemVersion' => null
-        ];
-    }
-    else {
-        $Result = new WhichBrowser\Parser($_SERVER['HTTP_USER_AGENT']);
-        $Browser = $Result->browser;
-        if (empty($Browser->getName()) && !empty($Browser->using)) {
-            $Browser = $Browser->using;
-        }
-        $_SESSION['WhichBrowser'] = [
-            'Browser' => $Browser->getName(),
-            'BrowserVersion' => explode('.', $Browser->getVersion())[0],
-            'OperatingSystem' => $Result->os->getName(),
-            'OperatingSystemVersion' => $Result->os->getVersion()
-        ];
-    }
-    foreach (['Browser', 'BrowserVersion', 'OperatingSystem', 'OperatingSystemVersion'] as $Key) {
-        if ($_SESSION['WhichBrowser'][$Key] === "") {
-            $_SESSION['WhichBrowser'][$Key] = null;
-        }
-    }
+));
 
-    $Debug->set_flag('end parsing user agent');
-}
+G::$Twig->addFilter(new \Twig\TwigFilter(
+    'image',
+    function ($i) {
+        return ImageTools::process($i, true);
+    }
+));
 
-$Browser = $_SESSION['WhichBrowser']['Browser'];
-$BrowserVersion = $_SESSION['WhichBrowser']['BrowserVersion'];
-$OperatingSystem = $_SESSION['WhichBrowser']['OperatingSystem'];
-$OperatingSystemVersion = $_SESSION['WhichBrowser']['OperatingSystemVersion'];
+G::$Twig->addFilter(new \Twig\TwigFilter(
+    'selected',
+    function ($isSelected) {
+        return $isSelected ? ' selected="selected"' : '';
+    }
+));
+
+G::$Twig->addFilter(new \Twig\TwigFilter(
+    'ucfirstall',
+    function ($text) {
+        return implode(' ', array_map(function ($w) {return ucfirst($w);}, explode(' ', $text)));
+    }
+));
+
+G::$Twig->addFunction(new \Twig\TwigFunction('privilege', function ($default, $config, $key) {
+    return new \Twig\Markup(
+        ($default
+            ? sprintf(
+                '<input id="%s" type="checkbox" disabled="disabled"%s />&nbsp;',
+                "default_$key", (isset($default[$key]) && $default[$key] ? ' checked="checked"' : '')
+            )
+            : ''
+        )
+        . sprintf(
+            '<input type="checkbox" name="%s" id="%s" value="1"%s />&nbsp;<label for="%s">%s</label><br />',
+            "perm_$key", $key, (empty($config[$key]) ? '' : ' checked="checked"'), $key,
+            \Permissions::list()[$key] ?? "!unknown($key)!"
+        ),
+        'UTF-8'
+    );
+}));
+
+$Debug->set_flag('Twig constructed');
 
 $Debug->set_flag('start user handling');
 
@@ -152,8 +154,8 @@ if (isset($LoginCookie)) {
         logout($LoggedUser['ID'], $SessionID);
     }
 
-    $User = new \Gazelle\User($DB, $Cache, $LoggedUser['ID']);
-    $Session = new \Gazelle\Session($DB, $Cache, $LoggedUser['ID']);
+    $User = new \Gazelle\User($LoggedUser['ID']);
+    $Session = new \Gazelle\Session($LoggedUser['ID']);
 
     $UserSessions = $Session->sessions();
     if (!array_key_exists($SessionID, $UserSessions)) {
@@ -180,7 +182,8 @@ if (isset($LoginCookie)) {
     // No conditions will force a logout from this point, can hit the DB more.
     // Complete the $LoggedUser array
     $LoggedUser['Permissions'] = Permissions::get_permissions_for_user($LoggedUser['ID'], $LoggedUser['CustomPermissions']);
-    $LoggedUser['Permissions']['MaxCollages'] += Donations::get_personal_collages($LoggedUser['ID']);
+    $donorMan = new Gazelle\Manager\Donation;
+    $LoggedUser['Permissions']['MaxCollages'] += $donorMan->personalCollages($LoggedUser['ID']);
     $LoggedUser['RSS_Auth'] = md5($LoggedUser['ID'] . RSS_HASH . $LoggedUser['torrent_pass']);
 
     // Notifications
@@ -189,7 +192,7 @@ if (isset($LoginCookie)) {
     }
 
     // Stylesheet
-    $Stylesheets = new \Gazelle\Stylesheet($DB, $Cache);
+    $Stylesheets = new \Gazelle\Stylesheet;
     $LoggedUser['StyleName'] = $Stylesheets->getName($LoggedUser['StyleID']);
 
     // We've never had to disable the wiki privs of anyone.
@@ -199,8 +202,7 @@ if (isset($LoginCookie)) {
 
     // $LoggedUser['RatioWatch'] as a bool to disable things for users on Ratio Watch
     $LoggedUser['RatioWatch'] = (
-        $LoggedUser['RatioWatchEnds'] != '0000-00-00 00:00:00'
-        && time() < strtotime($LoggedUser['RatioWatchEnds'])
+        time() < strtotime($LoggedUser['RatioWatchEnds'])
         && ($LoggedUser['BytesDownloaded'] * $LoggedUser['RequiredRatio']) > $LoggedUser['BytesUploaded']
     );
 
@@ -214,7 +216,8 @@ if (isset($LoginCookie)) {
 
     // IP changed
     if ($LoggedUser['IP'] != $_SERVER['REMOTE_ADDR'] && !check_perms('site_disable_ip_history')) {
-        if (Tools::site_ban_ip($_SERVER['REMOTE_ADDR'])) {
+        $IPv4Man = new \Gazelle\Manager\IPv4;
+        if ($IPv4Man->isBanned($_SERVER['REMOTE_ADDR'])) {
             error('Your IP address has been banned.');
         }
         $User->updateIP($LoggedUser['IP'], $_SERVER['REMOTE_ADDR']);
@@ -222,12 +225,13 @@ if (isset($LoginCookie)) {
 
     // Update LastUpdate every 10 minutes
     if (strtotime($UserSessions[$SessionID]['LastUpdate']) + 600 < time()) {
+        $userAgent = parse_user_agent($Debug);
         $Session->update([
             'ip-address'      => $_SERVER['REMOTE_ADDR'],
-            'browser'         => $Browser,
-            'browser-version' => $BrowserVersion,
-            'os'              => $OperatingSystem,
-            'os-version'      => $OperatingSystemVersion,
+            'browser'         => $userAgent['Browser'],
+            'browser-version' => $userAgent['BrowserVersion'],
+            'os'              => $userAgent['OperatingSystem'],
+            'os-version'      => $userAgent['OperatingSystemVersion'],
             'session-id'      => $SessionID
         ]);
     }
@@ -235,6 +239,57 @@ if (isset($LoginCookie)) {
 
 $Debug->set_flag('end user handling');
 $Debug->set_flag('start function definitions');
+
+function parse_user_agent($Debug) {
+    $Debug->set_flag('start parsing user agent');
+    if (preg_match("/^Lidarr\/([0-9\.]+) \((.+)\)$/", $_SERVER['HTTP_USER_AGENT'], $Matches) === 1) {
+        $OS = explode(" ", $Matches[2]);
+        $browserUserAgent = [
+            'Browser' => 'Lidarr',
+            'BrowserVersion' => substr($Matches[1], 0, strrpos($Matches[1], '.')),
+            'OperatingSystem' => $OS[0] === 'macos' ? 'macOS' : ucfirst($OS[0]),
+            'OperatingSystemVersion' => $OS[1] ?? null
+        ];
+    }
+    elseif (preg_match("/^VarroaMusica\/([0-9]+(?:dev)?)$/", $_SERVER['HTTP_USER_AGENT'], $Matches) === 1) {
+        $browserUserAgent = [
+            'Browser' => 'VarroaMusica',
+            'BrowserVersion' => str_replace('dev', '', $Matches[1]),
+            'OperatingSystem' => null,
+            'OperatingSystemVersion' => null
+        ];
+    }
+    elseif (in_array($_SERVER['HTTP_USER_AGENT'], ['Headphones/None', 'whatapi [isaaczafuta]'])) {
+        $browserUserAgent = [
+            'Browser' => $_SERVER['HTTP_USER_AGENT'],
+            'BrowserVersion' => null,
+            'OperatingSystem' => null,
+            'OperatingSystemVersion' => null
+        ];
+    }
+    else {
+        $Result = new WhichBrowser\Parser($_SERVER['HTTP_USER_AGENT']);
+        $Browser = $Result->browser;
+        if (empty($Browser->getName()) && !empty($Browser->using)) {
+            $Browser = $Browser->using;
+        }
+        $browserUserAgent = [
+            'Browser' => $Browser->getName(),
+            'BrowserVersion' => explode('.', $Browser->getVersion())[0],
+            'OperatingSystem' => $Result->os->getName(),
+            'OperatingSystemVersion' => $Result->os->getVersion()
+        ];
+    }
+    foreach (['Browser', 'BrowserVersion', 'OperatingSystem', 'OperatingSystemVersion'] as $Key) {
+        if ($browserUserAgent[$Key] === "") {
+            $browserUserAgent[$Key] = null;
+        }
+    }
+
+    $Debug->set_flag('end parsing user agent');
+
+    return $browserUserAgent;
+}
 
 /**
  * Log out the current session
@@ -245,7 +300,7 @@ function logout($userId, $sessionId = false) {
     setcookie('keeplogged', '', $epoch, '/', '', false);
     setcookie('session', '',    $epoch, '/', '', false);
     if ($sessionId) {
-        $session = new \Gazelle\Session(G::$DB, G::$Cache, $userId);
+        $session = new \Gazelle\Session($userId);
         $session->drop($sessionId);
     }
 
@@ -261,7 +316,7 @@ function logout($userId, $sessionId = false) {
  * Logout all sessions
  */
 function logout_all_sessions($userId) {
-    $session = new \Gazelle\Session(G::$DB, G::$Cache, $userId);
+    $session = new \Gazelle\Session($userId);
     $session->dropAll();
     logout($userId);
 }
@@ -287,7 +342,7 @@ function enforce_login() {
  */
 function authorize($Ajax = false) {
     if (empty($_REQUEST['auth']) || $_REQUEST['auth'] != G::$LoggedUser['AuthKey']) {
-        send_irc("PRIVMSG ".LAB_CHAN." :".G::$LoggedUser['Username']." just failed authorize on ".$_SERVER['REQUEST_URI'].(!empty($_SERVER['HTTP_REFERER']) ? " coming from ".$_SERVER['HTTP_REFERER'] : ""));
+        send_irc("PRIVMSG " . STATUS_CHAN . " :" . G::$LoggedUser['Username'] . " just failed authorize on " . $_SERVER['REQUEST_URI'] . (!empty($_SERVER['HTTP_REFERER']) ? " coming from " . $_SERVER['HTTP_REFERER'] : ""));
         error('Invalid authorization key. Go back, refresh, and try again.', $Ajax);
         return false;
     }
@@ -297,7 +352,7 @@ function authorize($Ajax = false) {
 function authorizeIfPost($Ajax = false) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($_POST['auth']) || $_POST['auth'] != G::$LoggedUser['AuthKey']) {
-            send_irc("PRIVMSG " . LAB_CHAN . " :" . G::$LoggedUser['Username'] . " just failed authorize on " . $_SERVER['REQUEST_URI'] . (!empty($_SERVER['HTTP_REFERER']) ? " coming from " . $_SERVER['HTTP_REFERER'] : ""));
+            send_irc("PRIVMSG " . STATUS_CHAN . " :" . G::$LoggedUser['Username'] . " just failed authorize on " . $_SERVER['REQUEST_URI'] . (!empty($_SERVER['HTTP_REFERER']) ? " coming from " . $_SERVER['HTTP_REFERER'] : ""));
             error('Invalid authorization key. Go back, refresh, and try again.', $Ajax);
             return false;
         }

@@ -1,8 +1,19 @@
 <?php
 
-define('FOOTER_FILE', SERVER_ROOT.'/design/privatefooter.php');
-$HTTPS = ($_SERVER['SERVER_PORT'] == 443) ? 'ssl_' : '';
+use \Gazelle\Manager\Notification;
+
+define('FOOTER_FILE', __DIR__ . '/privatefooter.php');
+
 $UseTooltipster = !isset(G::$LoggedUser['Tooltipster']) || G::$LoggedUser['Tooltipster'];
+
+$authArgs = '&amp;user=' . G::$LoggedUser['ID']
+    . '&amp;auth=' . G::$LoggedUser['RSS_Auth']
+    . '&amp;passkey=' . G::$LoggedUser['torrent_pass']
+    . '&amp;authkey=' . G::$LoggedUser['AuthKey'];
+
+$Staff = check_perms('users_mod')
+    ? new \Gazelle\Staff(G::$LoggedUser['ID'])
+    : null;
 ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
@@ -21,69 +32,35 @@ $UseTooltipster = !isset(G::$LoggedUser['Tooltipster']) || G::$LoggedUser['Toolt
     <link rel="search" type="application/opensearchdescription+xml" title="<?=SITE_NAME?> Log" href="opensearch.php?type=log" />
     <link rel="search" type="application/opensearchdescription+xml" title="<?=SITE_NAME?> Users" href="opensearch.php?type=users" />
     <link rel="search" type="application/opensearchdescription+xml" title="<?=SITE_NAME?> Wiki" href="opensearch.php?type=wiki" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=feed_news&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - News" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=feed_blog&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Blog" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=feed_changelog&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Gazelle Change Log" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_notify_<?=G::$LoggedUser['torrent_pass']?>&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - P.T.N." />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=feed_news<?= $authArgs ?>" title="<?=SITE_NAME?> - News" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=feed_blog<?= $authArgs ?>" title="<?=SITE_NAME?> - Blog" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=feed_changelog<?= $authArgs ?>" title="<?=SITE_NAME?> - Change Log" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_notify_<?=G::$LoggedUser['torrent_pass']?><?= $authArgs ?>" title="<?=SITE_NAME?> - P.T.N." />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_all<?= $authArgs ?>" title="<?=SITE_NAME?> - All Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_music<?= $authArgs ?>" title="<?=SITE_NAME?> - Music Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_apps<?= $authArgs ?>" title="<?=SITE_NAME?> - Application Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_ebooks<?= $authArgs ?>" title="<?=SITE_NAME?> - E-Book Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_abooks<?= $authArgs ?>" title="<?=SITE_NAME?> - Audiobooks Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_evids<?= $authArgs ?>" title="<?=SITE_NAME?> - E-Learning Video Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_comedy<?= $authArgs ?>" title="<?=SITE_NAME?> - Comedy Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_comics<?= $authArgs ?>" title="<?=SITE_NAME?> - Comic Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_mp3<?= $authArgs ?>" title="<?=SITE_NAME?> - MP3 Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_flac<?= $authArgs ?>" title="<?=SITE_NAME?> - FLAC Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_vinyl<?= $authArgs ?>" title="<?=SITE_NAME?> - Vinyl Sourced Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_lossless<?= $authArgs ?>" title="<?=SITE_NAME?> - Lossless Torrents" />
+    <link rel="alternate" type="application/rss+xml" href="feeds.php?feed=torrents_lossless24<?= $authArgs ?>" title="<?=SITE_NAME?> - 24bit Lossless Torrents" />
 <?php
 if (isset(G::$LoggedUser['Notify'])) {
     foreach (G::$LoggedUser['Notify'] as $Filter) {
         list($FilterID, $FilterName) = $Filter;
 ?>
     <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_notify_<?=$FilterID?>_<?=G::$LoggedUser['torrent_pass']?>&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>&amp;name=<?=urlencode($FilterName)?>"
+            href="feeds.php?feed=torrents_notify_<?=$FilterID?>_<?=G::$LoggedUser['torrent_pass']?><?= $authArgs ?>&amp;name=<?=urlencode($FilterName)?>"
             title="<?=SITE_NAME?> - <?=display_str($FilterName)?>" />
 <?php
     }
 }
 ?>
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_all&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - All Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_music&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Music Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_apps&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Application Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_ebooks&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - E-Book Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_abooks&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Audiobooks Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_evids&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - E-Learning Video Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_comedy&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Comedy Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_comics&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Comic Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_mp3&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - MP3 Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_flac&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - FLAC Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_vinyl&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Vinyl Sourced Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_lossless&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - Lossless Torrents" />
-    <link rel="alternate" type="application/rss+xml"
-            href="feeds.php?feed=torrents_lossless24&amp;user=<?=G::$LoggedUser['ID']?>&amp;auth=<?=G::$LoggedUser['RSS_Auth']?>&amp;passkey=<?=G::$LoggedUser['torrent_pass']?>&amp;authkey=<?=G::$LoggedUser['AuthKey']?>"
-            title="<?=SITE_NAME?> - 24bit Lossless Torrents" />
     <link rel="stylesheet" type="text/css"
             href="<?=STATIC_SERVER?>styles/global.css?v=<?=filemtime(SERVER_ROOT.'/public/static/styles/global.css')?>" />
 <?php
@@ -156,13 +133,13 @@ foreach ($Scripts as $Script) {
 global $ClassLevels;
 // Get notifications early to change menu items if needed
 global $NotificationSpans;
-$NotificationsManager = new NotificationsManager(G::$LoggedUser['ID']);
-$Notifications = $NotificationsManager->get_notifications();
-$UseNoty = $NotificationsManager->use_noty();
+$notification = new Notification(G::$LoggedUser['ID']);
+$Notifications = $notification->notifications();
+$UseNoty = $notification->useNoty();
 $NewSubscriptions = false;
 $NotificationSpans = [];
 foreach ($Notifications as $Type => $Notification) {
-    if ($Type === NotificationsManager::SUBSCRIPTIONS) {
+    if ($Type === Notification::SUBSCRIPTIONS) {
         $NewSubscriptions = true;
     }
     if ($UseNoty) {
@@ -172,8 +149,9 @@ foreach ($Notifications as $Type => $Notification) {
 if ($UseNoty && !empty($NotificationSpans)) {
     NotificationsManagerView::load_js();
 }
-if ($NotificationsManager->is_skipped(NotificationsManager::SUBSCRIPTIONS)) {
-    $NewSubscriptions = Subscriptions::has_new_subscriptions();
+if ($notification->isSkipped(Notification::SUBSCRIPTIONS)) {
+    $subscription = new \Gazelle\Manager\Subscription(G::$LoggedUser['ID']);
+    $NewSubscriptions = $subscription->unread();
 }
 
 $NavItems = Users::get_user_nav_items(G::$LoggedUser['ID']);
@@ -226,7 +204,15 @@ if (check_perms('site_send_unlimited_invites')) {
                         <a href="user.php?action=invite" class='tooltip' title="Invite<?=$Invites?>">Invite<?=$Invites?></a>
                     </li>
                     <li id="nav_donate" class="brackets<?=Format::add_class($PageID, ['donate'], 'active', false)?>">
-                        <a href="donate.php" class='tooltip' title="Donate">Donate</a>
+<?php
+$Payment = new Gazelle\Manager\Payment;
+$donorMan = new Gazelle\Manager\Donation;
+$monthlyRental = $Payment->monthlyRental();
+$percent = $monthlyRental == 0.0
+    ? 100
+    : min(100, (int)(($donorMan->totalMonth(1) / $monthlyRental) * 100));
+?>
+                        <a href="donate.php" class='tooltip' title="Donate">Donate (<?= $percent ?>%)</a>
                     </li>
 
                 </ul>
@@ -280,6 +266,12 @@ if (check_perms('site_send_unlimited_invites')) {
                 $Tests = array_map($parseNavItem, explode(',', $Tests));
             } else {
                 $Tests = [$Tests];
+            }
+
+            if ($Key == 'inbox') {
+                $Target = Gazelle\Inbox::getLinkQuick(null,
+                    isset(G::$LoggedUser['ListUnreadPMsFirst']) && G::$LoggedUser['ListUnreadPMsFirst']
+                );
             }
 
             $ClassNames = NULL;
@@ -351,46 +343,18 @@ if (check_perms('site_send_unlimited_invites')) {
 $Alerts = [];
 $ModBar = [];
 
-// Staff blog
-if (check_perms('users_mod')) {
-    global $SBlogReadTime, $LatestSBlogTime;
-    if (!$SBlogReadTime && ($SBlogReadTime = G::$Cache->get_value('staff_blog_read_'.G::$LoggedUser['ID'])) === false) {
-        G::$DB->query("
-            SELECT Time
-            FROM staff_blog_visits
-            WHERE UserID = ".G::$LoggedUser['ID']);
-        if (list($SBlogReadTime) = G::$DB->next_record()) {
-            $SBlogReadTime = strtotime($SBlogReadTime);
-        } else {
-            $SBlogReadTime = 0;
-        }
-        G::$Cache->cache_value('staff_blog_read_'.G::$LoggedUser['ID'], $SBlogReadTime, 1209600);
-    }
-    if (!$LatestSBlogTime && ($LatestSBlogTime = G::$Cache->get_value('staff_blog_latest_time')) === false) {
-        G::$DB->query("
-            SELECT MAX(Time)
-            FROM staff_blog");
-        list($LatestSBlogTime) = G::$DB->next_record();
-        if ($LatestSBlogTime) {
-            $LatestSBlogTime = strtotime($LatestSBlogTime);
-        } else {
-            $LatestSBlogTime = 0;
-        }
-        G::$Cache->cache_value('staff_blog_latest_time', $LatestSBlogTime, 1209600);
-    }
-    if ($SBlogReadTime < $LatestSBlogTime) {
-        $Alerts[] = '<a href="staffblog.php">New staff blog post!</a>';
-    }
+if ($Staff && $Staff->blogAlert()) {
+    $Alerts[] = '<a href="staffblog.php">New staff blog post!</a>';
 }
 
 // Inbox
-if ($NotificationsManager->is_traditional(NotificationsManager::INBOX)) {
-    $NotificationsManager->load_inbox();
-    $NewMessages = $NotificationsManager->get_notifications();
-    if (isset($NewMessages[NotificationsManager::INBOX])) {
-        $Alerts[] = NotificationsManagerView::format_traditional($NewMessages[NotificationsManager::INBOX]);
+if ($notification->isTraditional(Notification::INBOX)) {
+    $notification->loadInbox();
+    $NewMessages = $notification->notifications();
+    if (isset($NewMessages[Notification::INBOX])) {
+        $Alerts[] = NotificationsManagerView::format_traditional($NewMessages[Notification::INBOX]);
     }
-    $NotificationsManager->clear_notifications_array();
+    $notification->clear();
 }
 
 if (G::$LoggedUser['RatioWatch']) {
@@ -400,13 +364,13 @@ if (G::$LoggedUser['RatioWatch']) {
 }
 
 // Torrents
-if ($NotificationsManager->is_traditional(NotificationsManager::TORRENTS)) {
-    $NotificationsManager->load_torrent_notifications();
-    $NewTorrents = $NotificationsManager->get_notifications();
-    if (isset($NewTorrents[NotificationsManager::TORRENTS])) {
-        $Alerts[] = NotificationsManagerView::format_traditional($NewTorrents[NotificationsManager::TORRENTS]);
+if ($notification->isTraditional(Notification::TORRENTS)) {
+    $notification->loadTorrents();
+    $NewTorrents = $notification->notifications();
+    if (isset($NewTorrents[Notification::TORRENTS])) {
+        $Alerts[] = NotificationsManagerView::format_traditional($NewTorrents[Notification::TORRENTS]);
     }
-    $NotificationsManager->clear_notifications_array();
+    $notification->clear();
 }
 if (check_perms('users_mod')) {
     $ModBar[] = '<a href="tools.php">Toolbox</a>';
@@ -443,47 +407,17 @@ if (check_perms('users_mod') || G::$LoggedUser['PermissionID'] == FORUM_MOD) {
     }
 }
 if (check_perms('admin_reports')) {
-// Torrent reports code
-    $NumTorrentReports = G::$Cache->get_value('num_torrent_reportsv2');
-    if ($NumTorrentReports === false) {
-        G::$DB->query("
-            SELECT COUNT(ID)
-            FROM reportsv2
-            WHERE Status = 'New'");
-        list($NumTorrentReports) = G::$DB->next_record();
-        G::$Cache->cache_value('num_torrent_reportsv2', $NumTorrentReports, 0);
-    }
+    $open = \Gazelle\Report::openCount(G::$DB, G::$Cache);
+    $ModBar[] = '<a href="reportsv2.php">' . $open . (($open == 1) ? ' Report' : ' Reports') . '</a>';
 
-    $ModBar[] = '<a href="reportsv2.php">'.$NumTorrentReports.(($NumTorrentReports == 1) ? ' Report' : ' Reports').'</a>';
-
-// Other reports code
-    $NumOtherReports = G::$Cache->get_value('num_other_reports');
-    if ($NumOtherReports === false) {
-        G::$DB->query("
-            SELECT COUNT(ID)
-            FROM reports
-            WHERE Status = 'New'");
-        list($NumOtherReports) = G::$DB->next_record();
-        G::$Cache->cache_value('num_other_reports', $NumOtherReports, 0);
-    }
-
-    if ($NumOtherReports > 0) {
-        $ModBar[] = '<a href="reports.php">'.$NumOtherReports.(($NumTorrentReports == 1) ? ' Other report' : ' Other reports').'</a>';
+    $other = \Gazelle\Report::otherCount(G::$DB, G::$Cache);
+    if ($other > 0) {
+        $ModBar[] = '<a href="reports.php">' . $other . (($other == 1) ? ' Other report' : ' Other reports') . '</a>';
     }
 } elseif (check_perms('site_moderate_forums')) {
-    $NumForumReports = G::$Cache->get_value('num_forum_reports');
-    if ($NumForumReports === false) {
-        G::$DB->query("
-            SELECT COUNT(ID)
-            FROM reports
-            WHERE Status = 'New'
-                AND Type IN('artist_comment', 'collages_comment', 'post', 'requests_comment', 'thread', 'torrents_comment')");
-        list($NumForumReports) = G::$DB->next_record();
-        G::$Cache->cache_value('num_forum_reports', $NumForumReports, 0);
-    }
-
-    if ($NumForumReports > 0) {
-        $ModBar[] = '<a href="reports.php">'.$NumForumReports.(($NumForumReports == 1) ? ' Forum report' : ' Forum reports').'</a>';
+    $open = \Gazelle\Report::forumCount(G::$DB, G::$Cache);
+    if ($open > 0) {
+        $ModBar[] = '<a href="reports.php">' . $open . (($open == 1) ? ' Forum report' : ' Forum reports') . '</a>';
     }
 }
 
@@ -521,18 +455,8 @@ if (check_perms('users_mod') && FEATURE_EMAIL_REENABLE) {
 }
 
 if (check_perms('admin_manage_payments')) {
-    $DuePayments = G::$Cache->get_value('due_payments');
-    if ($DuePayments === false) {
-        G::$DB->prepared_query("
-            SELECT Text, Expiry
-            FROM payment_reminders
-            WHERE Active = 1 AND Expiry < ?
-            ORDER BY Expiry",
-            date('Y-m-d', strtotime('+6 days')));
-        $DuePayments = G::$DB->to_array(false, MYSQLI_ASSOC);
-        G::$Cache->cache_value('due_payments', $DuePayments, 60 * 60);
-    }
-
+    $Payment = new \Gazelle\Manager\Payment;
+    $DuePayments = $Payment->due();
     if (count($DuePayments) > 0) {
         $AlertText = '<a href="tools.php?action=payment_list">Payments due</a>';
         foreach ($DuePayments as $p) {
@@ -551,8 +475,15 @@ if (check_perms('admin_site_debug')) {
     }
 }
 
+if (check_perms('admin_manage_referrals')) {
+    $Referrals = new \Gazelle\Manager\Referral;
+    if (!$Referrals->checkBouncer()) {
+        $Alerts[] = '<a href="tools.php?action=referral_sandbox"><span style="color: red">Referral bouncer not responding</span></a>';
+    }
+}
+
 if (check_perms('admin_periodic_task_view')) {
-    $scheduler = new \Gazelle\Schedule\Scheduler(G::$DB, G::$Cache);
+    $scheduler = new \Gazelle\Schedule\Scheduler;
     if ($insane = $scheduler->getInsaneTasks()) {
         $Alerts[] = sprintf('<a href="tools.php?action=periodic&amp;mode=view">There are %d insane tasks</a>', $insane);
     }

@@ -1,22 +1,20 @@
 <?php
 
-use OrpheusNET\Logchecker\Logchecker;
-
 //******************************************************************************//
 //--------------- Take edit ----------------------------------------------------//
-// This pages handles the backend of the 'edit torrent' function. It checks        //
-// the data, and if it all validates, it edits the values in the database        //
-// that correspond to the torrent in question.                                    //
+// This pages handles the backend of the 'edit torrent' function. It checks     //
+// the data, and if it all validates, it edits the values in the database       //
+// that correspond to the torrent in question.                                  //
 //******************************************************************************//
+
+use OrpheusNET\Logchecker\Logchecker;
 
 enforce_login();
 authorize();
 
-$Validate = new Validate;
-
 //******************************************************************************//
 //--------------- Set $Properties array ----------------------------------------//
-// This is used if the form doesn't validate, and when the time comes to enter    //
+// This is used if the form doesn't validate, and when the time comes to enter  //
 // it into the database.                                                        //
 //******************************************************************************//
 
@@ -51,17 +49,16 @@ $Properties['LossymasterApproved'] = (isset($_POST['lossymaster_approved']))? 1 
 $Properties['LossywebApproved'] = (isset($_POST['lossyweb_approved'])) ? 1 : 0;
 $Properties['Format'] = $_POST['format'];
 $Properties['Media'] = $_POST['media'];
-$Properties['Bitrate'] = $_POST['bitrate'];
-$Properties['Encoding'] = $_POST['bitrate'];
+$Properties['Bitrate'] = $Properties['Encoding'] = $_POST['bitrate'];
 $Properties['TorrentDescription'] = $_POST['release_desc'];
-$Properties['Name'] = $_POST['title'];
-if ($_POST['album_desc']) {
+$Properties['Name'] = $_POST['title'] ?? '';
+if (isset($_POST['album_desc'])) {
     $Properties['GroupDescription'] = $_POST['album_desc'];
 }
 if (check_perms('torrents_freeleech')) {
     $Free = $_POST['freeleechtype'];
     if (!in_array($Free, ['0', '1', '2'])) {
-        error(404);
+        error(0);
     }
     $Properties['FreeLeech'] = $Free;
 
@@ -70,7 +67,7 @@ if (check_perms('torrents_freeleech')) {
     } else {
         $FreeType = $_POST['freeleechreason'];
         if (!in_array($FreeType, ['0', '1', '2', '3'])) {
-            error(404);
+            error(0);
         }
     }
     $Properties['FreeLeechType'] = $FreeType;
@@ -79,15 +76,15 @@ if (check_perms('torrents_freeleech')) {
 //******************************************************************************//
 //--------------- Validate data in edit form -----------------------------------//
 
-$DB->prepared_query("
+list($UserID, $Remastered, $RemasterYear, $CurFreeLeech) = $DB->row('
     SELECT UserID, Remastered, RemasterYear, FreeTorrent
     FROM torrents
-    WHERE ID = ?", $TorrentID
+    WHERE ID = ?
+    ', $TorrentID
 );
-if (!$DB->has_results()) {
+if (!$UserID) {
     error(404);
 }
-list($UserID, $Remastered, $RemasterYear, $CurFreeLeech) = $DB->fetch_record(MYSQLI_BOTH, false);
 
 if ($LoggedUser['ID'] != $UserID && !check_perms('torrents_edit')) {
     error(403);
@@ -105,6 +102,7 @@ if ($Properties['UnknownRelease'] && !($Remastered == '1' && !$RemasterYear) && 
     }
 }
 
+$Validate = new Validate;
 $Validate->SetFields('type', '1', 'number', 'Not a valid type.', ['maxlength' => count($Categories), 'minlength' => 1]);
 switch ($Type) {
     case 'Music':
@@ -132,11 +130,9 @@ switch ($Type) {
 
         $Validate->SetFields('remaster_catalogue_number', '0', 'string', 'Remaster catalogue number must be between 2 and 80 characters.', ['maxlength' => 80, 'minlength' => 2]);
 
-
         $Validate->SetFields('format', '1', 'inarray', 'Not a valid format.', ['inarray' => $Formats]);
 
         $Validate->SetFields('bitrate', '1', 'inarray', 'You must choose a bitrate.', ['inarray' => $Bitrates]);
-
 
         // Handle 'other' bitrates
         if ($Properties['Encoding'] == 'Other') {
@@ -167,7 +163,6 @@ switch ($Type) {
         $Validate->SetFields('format', '1', 'inarray', 'Not a valid format.', ['inarray' => $Formats]);
 
         $Validate->SetFields('bitrate', '1', 'inarray', 'You must choose a bitrate.', ['inarray' => $Bitrates]);
-
 
         // Handle 'other' bitrates
         if ($Properties['Encoding'] == 'Other') {
@@ -207,21 +202,19 @@ if ($Properties['Remastered'] && !$Properties['RemasterYear']) {
     }
 }
 
-// Strip out Amazon's padding
-$AmazonReg = '/(http:\/\/ecx.images-amazon.com\/images\/.+)(\._.*_\.jpg)/i';
-$Matches = [];
-if (preg_match($AmazonReg, $Properties['Image'], $Matches)) {
-    $Properties['Image'] = $Matches[1].'.jpg';
-}
-ImageTools::blacklisted($Properties['Image']);
-
 if ($Err) { // Show the upload form, with the data the user entered
-    if (check_perms('site_debug')) {
-        die($Err);
-    }
     error($Err);
 }
 
+// Strip out Amazon's padding
+if (isset($Properties['Image'])) {
+    $AmazonReg = '/(http:\/\/ecx.images-amazon.com\/images\/.+)(\._.*_\.jpg)/i';
+    $Matches = [];
+    if (preg_match($AmazonReg, $Properties['Image'], $Matches)) {
+        $Properties['Image'] = $Matches[1].'.jpg';
+    }
+    ImageTools::blacklisted($Properties['Image']);
+}
 
 //******************************************************************************//
 //--------------- Make variables ready for database input ----------------------//
@@ -234,7 +227,6 @@ foreach ($Properties as $Key => $Value) {
         $T[$Key] = null;
     }
 }
-
 
 //******************************************************************************//
 //--------------- Start database stuff -----------------------------------------//
@@ -250,10 +242,7 @@ $DBTorVals = $DBTorVals[0];
 $LogDetails = '';
 foreach ($DBTorVals as $Key => $Value) {
     $Value = "'$Value'";
-    if ($Value != $T[$Key]) {
-        if (!isset($T[$Key])) {
-            continue;
-        }
+    if (isset($T[$Key]) && $Value != $T[$Key]) {
         if ((empty($Value) && empty($T[$Key])) || ($Value == "'0'" && $T[$Key] == "''")) {
             continue;
         }
@@ -265,37 +254,44 @@ foreach ($DBTorVals as $Key => $Value) {
     }
 }
 
-$AddedLogs = false;
+// Some browsers will report an empty file when you submit, prune those out
+$_FILES['logfiles']['name'] = array_filter($_FILES['logfiles']['name'], function($Name) { return !empty($Name); });
+
+$logfileSummary = new \Gazelle\LogfileSummary;
+$logfiles = [];
 if (count($_FILES['logfiles']['name']) > 0) {
     ini_set('upload_max_filesize', 1000000);
-    $Logchecker = new Logchecker();
+    $ripFiler = new \Gazelle\File\RipLog;
+    $htmlFiler = new \Gazelle\File\RipLogHTML;
     foreach ($_FILES['logfiles']['name'] as $Pos => $File) {
         if (!$_FILES['logfiles']['size'][$Pos]) {
             continue;
         }
+        $logfile = new \Gazelle\Logfile(
+            $_FILES['logfiles']['tmp_name'][$Pos],
+            $_FILES['logfiles']['name'][$Pos]
+        );
+        $logfiles[] = $logfile;
+        $logfileSummary->add($logfile);
 
-        $LogPath = $_FILES['logfiles']['tmp_name'][$Pos];
-        $FileName = $_FILES['logfiles']['name'][$Pos];
-
-        $Logchecker->new_file($LogPath);
-        list($Score, $Details, $Checksum, $Text) = $Logchecker->parse();
-        $Details = implode("\r\n", $Details);
-
-        $DB->prepared_query("INSERT INTO torrents_logs (`TorrentID`, `Log`, `Details`, `Score`, `Checksum`, `FileName`) VALUES (?, ?, ?, ?, ?, ?)",
-            $TorrentID, $Text, $Details, $Score, $Checksum, $FileName
+        $DB->prepared_query('
+            INSERT INTO torrents_logs
+                   (TorrentID, Score, `Checksum`, FileName, Ripper, RipperVersion, `Language`, ChecksumState, LogcheckerVersion, Log, Details)
+            VALUES (?,         ?,      ?,         ?,        ?,      ?,              ?,         ?,             ?,                 ?,   ?)
+            ', $TorrentID, $logfile->score(), $logfile->checksumStatus(), $logfile->filename(), $logfile->ripper(),
+                $logfile->ripperVersion(), $logfile->language(), $logfile->checksumState(),
+                Logchecker::getLogcheckerVersion(), $logfile->text(), $logfile->detailsAsString()
         );
         $LogID = $DB->inserted_id();
-        if (move_uploaded_file($LogPath, SERVER_ROOT . "/logs/{$TorrentID}_{$LogID}.log") === false) {
-            die("Could not copy logfile to the server.");
-        }
-        $AddedLogs = true;
+        $ripFiler->put($logfile->filepath(), [$TorrentID, $LogID]);
+        $htmlFiler->put($logfile->text(), [$TorrentID, $LogID]);
     }
 }
 
 // Update info for the torrent
 $SQL = "UPDATE torrents AS t";
 
-if ($AddedLogs) {
+if ($logfiles) {
     $SQL .= "
     LEFT JOIN (
       SELECT
@@ -310,16 +306,16 @@ if ($AddedLogs) {
 }
 $SQL .= "
     SET
-        Media = $T[Media],
-        Format = $T[Format],
-        Encoding = $T[Encoding],
-        RemasterYear = $T[RemasterYear],
-        Remastered = $T[Remastered],
-        RemasterTitle = $T[RemasterTitle],
-        RemasterRecordLabel = $T[RemasterRecordLabel],
-        RemasterCatalogueNumber = $T[RemasterCatalogueNumber],
-        Scene = $T[Scene],";
-if ($AddedLogs) {
+        Media = {$T['Media']},
+        Format = {$T['Format']},
+        Encoding = {$T['Encoding']},
+        RemasterYear = {$T['RemasterYear']},
+        Remastered = {$T['Remastered']},
+        RemasterTitle = {$T['RemasterTitle']},
+        RemasterRecordLabel = {$T['RemasterRecordLabel']},
+        RemasterCatalogueNumber = {$T['RemasterCatalogueNumber']},
+        Scene = {$T['Scene']},";
+if ($logfiles) {
     $SQL .= "
         LogScore = CASE WHEN tl.Score IS NULL THEN 100 ELSE tl.Score END,
         LogChecksum = CASE WHEN tl.Checksum IS NULL THEN '1' ELSE tl.Checksum END,
@@ -327,32 +323,26 @@ if ($AddedLogs) {
 }
 
 if (check_perms('torrents_freeleech')) {
-    $SQL .= "FreeTorrent = $T[FreeLeech],";
-    $SQL .= "FreeLeechType = $T[FreeLeechType],";
+    $SQL .= "FreeTorrent = {$T['FreeLeech']},";
+    $SQL .= "FreeLeechType = {$T['FreeLeechType']},";
 }
 
 if (check_perms('users_mod')) {
     if ($T['Format'] == "'FLAC'" && $T['Media'] == "'CD'") {
         $SQL .= "
-            HasLog = $T[HasLog],
-            HasCue = $T[HasCue],";
+            HasLog = {$T['HasLog']},
+            HasCue = {$T['HasCue']},";
     } else {
         $SQL .= "
             HasLog = '0',
             HasCue = '0',";
     }
-if (check_perms('site_debug')) {
-    //echo "<pre>";
-    //var_dump($T);
-    //echo "$SQL\n";
-    //die();
-}
 
     $DB->prepared_query('SELECT TorrentID FROM torrents_bad_tags WHERE TorrentID = ?', $TorrentID);
     list($btID) = $DB->fetch_record();
 
     if (!$btID && $Properties['BadTags']) {
-        $DB->prepared_query('INSERT INTO torrents_bad_tags (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_bad_tags (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -364,7 +354,7 @@ if (check_perms('site_debug')) {
     list($bfID) = $DB->fetch_record();
 
     if (!$bfID && $Properties['BadFolders']) {
-        $DB->prepared_query('INSERT INTO torrents_bad_folders (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_bad_folders (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -376,7 +366,7 @@ if (check_perms('site_debug')) {
     list($bfiID) = $DB->fetch_record();
 
     if (!$bfiID && $Properties['BadFiles']) {
-        $DB->prepared_query('INSERT INTO torrents_bad_files (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_bad_files (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -388,7 +378,7 @@ if (check_perms('site_debug')) {
     list($mlID) = $DB->fetch_record();
 
     if (!$mlID && $Properties['Lineage']) {
-        $DB->prepared_query('INSERT INTO torrents_missing_lineage (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_missing_lineage (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -400,7 +390,7 @@ if (check_perms('site_debug')) {
     list($caID) = $DB->fetch_record();
 
     if (!$caID && $Properties['CassetteApproved']) {
-        $DB->prepared_query('INSERT INTO torrents_cassette_approved (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_cassette_approved (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -412,7 +402,7 @@ if (check_perms('site_debug')) {
     list($lmaID) = $DB->fetch_record();
 
     if (!$lmaID && $Properties['LossymasterApproved']) {
-        $DB->prepared_query('INSERT INTO torrents_lossymaster_approved (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_lossymaster_approved (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -424,7 +414,7 @@ if (check_perms('site_debug')) {
     list($lwID) = $DB->fetch_record();
 
     if (!$lwID && $Properties['LossywebApproved']) {
-        $DB->prepared_query('INSERT INTO torrents_lossyweb_approved (TorrentID, UserID, TimeAdded) VALUES (?, ?, now())',
+        $DB->prepared_query('INSERT IGNORE INTO torrents_lossyweb_approved (TorrentID, UserID) VALUES (?, ?)',
             $TorrentID, $LoggedUser['ID']
         );
     }
@@ -434,7 +424,7 @@ if (check_perms('site_debug')) {
 }
 
 $SQL .= "
-        Description = $T[TorrentDescription]
+        Description = {$T['TorrentDescription']}
     WHERE ID = $TorrentID";
 $DB->query($SQL);
 

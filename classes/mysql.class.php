@@ -196,6 +196,9 @@ class DB_MYSQL {
             if (DEBUG_MODE || check_perms('site_debug')) {
                 print_r($this->Queries);
             }
+            echo "<pre>";
+            debug_print_backtrace();
+            echo "</pre>";
             die();
         } else {
             error('-1');
@@ -398,6 +401,13 @@ class DB_MYSQL {
         if ($this->LinkID) {
             return mysqli_insert_id($this->LinkID);
         }
+    }
+
+    function next_row($type = MYSQLI_NUM) {
+        if ($this->LinkID) {
+            return mysqli_fetch_array($this->QueryID, $type);
+        }
+        return null;
     }
 
     function next_record($Type = MYSQLI_BOTH, $Escape = true, $Reverse = false) {

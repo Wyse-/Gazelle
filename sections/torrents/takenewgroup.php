@@ -12,8 +12,8 @@ if (!check_perms('torrents_edit')) {
 
 $OldGroupID = $_POST['oldgroupid'];
 $TorrentID = $_POST['torrentid'];
-$ArtistName = db_string(trim($_POST['artist']));
-$Title = db_string(trim($_POST['title']));
+$ArtistName = trim($_POST['artist']);
+$Title = trim($_POST['title']);
 $Year = trim($_POST['year']);
 
 if (!is_number($OldGroupID) || !is_number($TorrentID) || !is_number($Year) || !$OldGroupID || !$TorrentID || !$Year || empty($Title) || empty($ArtistName)) {
@@ -47,20 +47,16 @@ if (empty($_POST['confirm'])) {
 <?php
     View::show_footer();
 } else {
-    $DB->query("
+    $DB->prepared_query('
         SELECT ArtistID, AliasID, Redirect, Name
         FROM artists_alias
-        WHERE Name = '$ArtistName'");
+        WHERE Name = ?
+        ', $ArtistName
+    );
     if (!$DB->has_results()) {
         $Redirect = 0;
-        $DB->query("
-            INSERT INTO artists_group (Name)
-            VALUES ('$ArtistName')");
-        $ArtistID = $DB->inserted_id();
-        $DB->query("
-            INSERT INTO artists_alias (ArtistID, Name)
-            VALUES ('$ArtistID', '$ArtistName')");
-        $AliasID = $DB->inserted_id();
+        $ArtistManager = new \Gazelle\Manager\Artist;
+        list($ArtistID, $AliasID) = $ArtistManager->createArtist($ArtistName);
     } else {
         list($ArtistID, $AliasID, $Redirect, $ArtistName) = $DB->next_record();
         if ($Redirect) {
@@ -68,33 +64,33 @@ if (empty($_POST['confirm'])) {
         }
     }
 
-    $DB->query("
-        INSERT INTO torrents_group
-            (ArtistID, CategoryID, Name, Year, Time, WikiBody, WikiImage)
-        VALUES
-            ($ArtistID, '1', '$Title', '$Year', '".sqltime()."', '', '')");
+    $DB->prepared_query("
+        INSERT INTO torrents_group /* [$Title] [$Year] */
+               (Name, Year, CategoryID, WikiBody, WikiImage)
+        VALUES (?,    ?,    1,         '',       '')
+        ", $Title, $Year
+    );
     $GroupID = $DB->inserted_id();
 
-    $DB->query("
+    $DB->prepared_query('
         INSERT INTO torrents_artists
-            (GroupID, ArtistID, AliasID, Importance, UserID)
-        VALUES
-            ('$GroupID', '$ArtistID', '$AliasID', '1', '$LoggedUser[ID]')");
+               (GroupID, ArtistID, AliasID, UserID, Importance)
+        VALUES (?,       ?,        ?,       ?,      1)
+        ', $GroupID, $ArtistID, $AliasID, $LoggedUser['ID']
+    );
 
-    $DB->query("
-        UPDATE torrents
-        SET GroupID = '$GroupID'
-        WHERE ID = '$TorrentID'");
+    $DB->prepared_query('
+        UPDATE torrents SET
+            GroupID = ?
+        WHERE ID = ?
+        ', $GroupID, $TorrentID
+    );
 
-    // Delete old group if needed
-    $DB->query("
-        SELECT ID
-        FROM torrents
-        WHERE GroupID = '$OldGroupID'");
-    if (!$DB->has_results()) {
-        Torrents::delete_group($OldGroupID);
-    } else {
+    // Update or remove previous group, depending on whether there is anything left
+    if ($DB->scalar('SELECT 1 FROM torrents WHERE GroupID = ?', $OldGroupID)) {
         Torrents::update_hash($OldGroupID);
+    } else {
+        Torrents::delete_group($OldGroupID);
     }
 
     Torrents::update_hash($GroupID);
@@ -105,4 +101,3 @@ if (empty($_POST['confirm'])) {
 
     header("Location: torrents.php?id=$GroupID");
 }
-?>

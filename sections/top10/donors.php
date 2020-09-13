@@ -5,7 +5,7 @@ View::show_header('Top 10 Donors');
 <div class="thin">
     <div class="header">
         <h2>Top Donors</h2>
-        <?php Top10View::render_linkbox("donors"); ?>
+        <?php \Gazelle\Top10::renderLinkbox("donors"); ?>
     </div>
 <?php
 
@@ -14,7 +14,7 @@ $limit = in_array($limit, [10, 100, 250]) ? $limit : 10;
 
 $isMod = check_perms("users_mod");
 
-$donor = new \Gazelle\Top10\Donor(G::$DB);
+$donor = new \Gazelle\Top10\Donor;
 $results = $donor->getTopDonors($limit);
 ?>
 <h3>Top <?="$limit";?> Donors

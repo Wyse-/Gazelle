@@ -11,11 +11,12 @@ $UserCount = Users::get_enabled_users_count();
 $UserID = $LoggedUser['ID'];
 
 //This is where we handle things passed to us
-$DB->query("
+$CanLeech = $DB->scalar("
     SELECT can_leech
     FROM users_main
-    WHERE ID = $UserID");
-list($CanLeech) = $DB->next_record();
+    WHERE ID = ?
+    ", $UserID
+);
 
 if ($LoggedUser['RatioWatch']
     || !$CanLeech
@@ -35,8 +36,7 @@ $Email = $_POST['email'];
 $Username = $LoggedUser['Username'];
 $SiteName = SITE_NAME;
 $SiteURL = site_url();
-$InviteExpires = time_plus(60 * 60 * 24 * 3); // 3 days
-$InviteReason = check_perms('users_invite_notes') ? db_string($_POST['reason']) : '';
+$InviteReason = check_perms('users_invite_notes') ? $_POST['reason'] : '';
 
 //MultiInvite
 if (strpos($Email, '|') !== false && check_perms('site_send_unlimited_invites')) {
@@ -46,6 +46,7 @@ if (strpos($Email, '|') !== false && check_perms('site_send_unlimited_invites'))
 }
 
 foreach ($Emails as $CurEmail) {
+    $CurEmail = trim($CurEmail);
     if (!preg_match("/^".EMAIL_REGEX."$/i", $CurEmail)) {
         if (count($Emails) > 1) {
             continue;
@@ -55,17 +56,19 @@ foreach ($Emails as $CurEmail) {
             die();
         }
     }
-    $DB->query("
-        SELECT Expires
+    $DB->prepared_query("
+        SELECT 1
         FROM invites
-        WHERE InviterID = ".$LoggedUser['ID']."
-            AND Email LIKE '$CurEmail'");
+        WHERE InviterID = ?
+            AND Email = ?
+        ", $LoggedUser['ID'], $CurEmail
+    );
     if ($DB->has_results()) {
         error('You already have a pending invite to that address!');
         header('Location: user.php?action=invite');
         die();
     }
-    $InviteKey = db_string(Users::make_secret());
+    $InviteKey = randomString();
 
 $DisabledChan = BOT_DISABLED_CHAN;
 $IRCServer = BOT_SERVER;
@@ -87,17 +90,20 @@ Thank you,
 $SiteName Staff
 EOT;
 
-    $DB->query("
+    $DB->prepared_query("
         INSERT INTO invites
-            (InviterID, InviteKey, Email, Expires, Reason)
-        VALUES
-            ('$LoggedUser[ID]', '$InviteKey', '".db_string($CurEmail)."', '$InviteExpires', '$InviteReason')");
+               (InviterID, InviteKey, Email, Reason, Expires)
+        VALUES (?,         ?,         ?,     ?,      now() + INTERVAL 3 DAY)
+        ", $LoggedUser['ID'], $InviteKey, $CurEmail, $InviteReason
+    );
 
     if (!check_perms('site_send_unlimited_invites')) {
-        $DB->query("
+        $DB->prepared_query("
             UPDATE users_main
             SET Invites = GREATEST(Invites, 1) - 1
-            WHERE ID = '$LoggedUser[ID]'");
+            WHERE ID = ?
+            ", $LoggedUser['ID']
+        );
         $Cache->begin_transaction('user_info_heavy_'.$LoggedUser['ID']);
         $Cache->update_row(false, ['Invites' => '-1']);
         $Cache->commit_transaction(0);

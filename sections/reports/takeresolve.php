@@ -7,11 +7,12 @@ if (!check_perms('admin_reports') && !check_perms('site_moderate_forums')) {
 
 $ReportID = (int) $_POST['reportid'];
 
-$DB->query("
+$Type = $DB->scalar("
     SELECT Type
     FROM reports
-    WHERE ID = $ReportID");
-list($Type) = $DB->next_record();
+    WHERE ID = ?
+    ", $ReportID
+);
 if (!check_perms('admin_reports')) {
     if (check_perms('site_moderate_forums')) {
         if (!in_array($Type, ['comment', 'post', 'thread'])) {
@@ -20,12 +21,14 @@ if (!check_perms('admin_reports')) {
     }
 }
 
-$DB->query("
-    UPDATE reports
-    SET Status = 'Resolved',
-        ResolvedTime = '".sqltime()."',
-        ResolverID = '".$LoggedUser['ID']."'
-    WHERE ID = '".db_string($ReportID)."'");
+$DB->prepared_query("
+    UPDATE reports SET
+        Status = 'Resolved',
+        ResolvedTime = now(),
+        ResolverID = ?
+    WHERE ID = ?
+    ", $LoggedUser['ID'], $ReportID
+);
 
 $Channels = [];
 
@@ -39,11 +42,11 @@ if (in_array($Type, ['comment', 'post', 'thread'])) {
     $Cache->decrement('num_forum_reports');
 }
 
-$DB->query("
-    SELECT COUNT(ID)
+$Remaining = $DB->scalar("
+    SELECT count(*)
     FROM reports
-    WHERE Status = 'New'");
-list($Remaining) = $DB->next_record();
+    WHERE Status = 'New'
+");
 
 foreach ($Channels as $Channel) {
     send_irc("PRIVMSG $Channel :Report $ReportID resolved by ".preg_replace('/^(.{2})/', '$1·', $LoggedUser['Username']).' on site ('.(int)$Remaining.' remaining).');
@@ -52,4 +55,3 @@ foreach ($Channels as $Channel) {
 $Cache->delete_value('num_other_reports');
 
 header('Location: reports.php');
-?>

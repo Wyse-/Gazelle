@@ -1,21 +1,25 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 run_service()
 {
-    service $1 start
-    if [ $? -ne 0 ]; then
-        exit 1
-    fi
+    service "$1" start || exit 1
 }
+
+# We'll need these anyway so why not kill some time while waiting on MySQL to be ready
+if [ -n "$ENV" ] && [ "$ENV" == "prod" ]; then
+    su -c 'composer --version && composer install --no-dev --optimize-autoloader --no-suggest; yarn --prod' gazelle
+else
+    su -c 'composer --version && composer install; yarn' gazelle
+fi
 
 # Wait for MySQL...
 counter=1
-while ! mysql -h mysql -ugazelle -ppassword -e "show databases;" > /dev/null 2>&1; do
+while ! mysql -h mysql -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "show databases;" > /dev/null 2>&1; do
     sleep 1
     counter=$((counter + 1))
     if [ $((counter % 20)) -eq 0 ]; then
-        mysql -h mysql -ugazelle -ppassword -e "show databases;"
-        >&2 echo "Still waiting for MySQL (Count: ${counter})."
+        mysql -h mysql -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "show databases;"
+        >&2 echo "Still waiting for MySQL (Count: $counter)."
     fi;
 done
 
@@ -23,11 +27,9 @@ if [ ! -f /var/www/classes/config.php ]; then
     bash /var/www/.docker/web/generate-config.sh
 fi
 
-echo "Run migrate..."
-LOCK_MY_DATABASE=1 /var/www/vendor/bin/phinx migrate
-
-if [ $? -ne 0 ]; then
-    echo "PHINX FAILED TO MIGRATE"
+echo "Run migrations..."
+if ! FKEY_MY_DATABASE=1 LOCK_MY_DATABASE=1 /var/www/vendor/bin/phinx migrate; then
+    echo "PHINX FAILED TO RUN MIGRATIONS"
     exit 1
 fi
 
@@ -35,13 +37,27 @@ echo -e "\n"
 
 if [ ! -f /srv/gazelle.txt ]; then
     echo "Run seed:run..."
-    /var/www/vendor/bin/phinx seed:run -s InitialUserSeeder
-    if [ $? -ne 0 ]; then
+    if ! /var/www/vendor/bin/phinx seed:run -s InitialUserSeeder; then
         echo "PHINX FAILED TO SEED"
         exit 1
     fi
     touch /srv/gazelle.txt
     echo -e "\n"
+fi
+
+if [ ! -d /var/lib/gazelle/torrent ]; then
+    echo "Generate file storage directories..."
+    perl /var/www/scripts/generate-storage-dirs /var/lib/gazelle/torrent 2 100
+    perl /var/www/scripts/generate-storage-dirs /var/lib/gazelle/riplog 2 100
+    perl /var/www/scripts/generate-storage-dirs /var/lib/gazelle/riploghtml 2 100
+    chown -R gazelle /var/lib/gazelle
+fi
+
+if [ ! -f /etc/php/7.3/cli/conf.d/99-boris.ini ]; then
+    echo "Initialize Boris..."
+    grep '^disable_functions' /etc/php/7.3/cli/php.ini \
+        | sed -r 's/pcntl_(fork|signal|signal_dispatch|waitpid),//g' \
+        > /etc/php/7.3/cli/conf.d/99-boris.ini
 fi
 
 echo "Start services..."

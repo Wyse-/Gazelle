@@ -7,15 +7,15 @@ if ($TorrentID === 0 || $LogID === 0) {
     error(404);
 }
 
-G::$DB->prepared_query("SELECT GroupID FROM torrents WHERE ID=?", $TorrentID);
-if (!G::$DB->has_results()) {
+$GroupID = $DB->scalar('SELECT GroupID FROM torrents WHERE ID = ?', $TorrentID);
+if (!$GroupID) {
     error(404);
 }
-list($GroupID) = G::$DB->fetch_record();
 
 @unlink(SERVER_ROOT."logs/{$TorrentID}_{$LogID}.log");
 
 Torrents::clear_log($TorrentID, $LogID);
 Torrents::set_logscore($TorrentID, $GroupID);
+Torrents::write_group_log($GroupID, $TorrentID, $LoggedUser['ID'], "Riplog ID $LogID removed from torrent $TorrentID", 0);
 
 header("Location: torrents.php?torrentid={$TorrentID}");

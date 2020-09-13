@@ -12,8 +12,6 @@ services:
       - ocelot
     volumes:
       - .:/var/www
-      - /var/www/vendor
-      - /var/www/node_modules
       - .docker/web/nginx.conf:/etc/nginx/sites-available/gazelle.conf
     environment:
       # These should match what you set for your mysql container below
@@ -58,3 +56,7 @@ services:
     volumes:
       - ./.docker/ocelot/ocelot.conf:/srv/ocelot.conf
       - ./.docker/ocelot/crontab:/srv/crontab
+    environment:
+      # These should match what you set for your mysql container above
+      - MYSQL_USER=gazelle
+      - MYSQL_PASSWORD=password

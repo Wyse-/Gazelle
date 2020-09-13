@@ -85,8 +85,7 @@ for ($i = 0; $i < $NumGroups / $CollageCovers; $i++) {
     $CollagePages[] = $CollagePage;
 }
 
-View::show_header($Name, 'browse,collage,bbcode,voting,recommend');
-
+View::show_header($Name, 'browse,collage,bbcode,voting');
 ?>
 <div class="thin">
     <div class="header">
@@ -112,7 +111,8 @@ View::show_header($Name, 'browse,collage,bbcode,voting,recommend');
             <span class="brackets">Locked</span>
 <?php
     }
-    if (Bookmarks::has_bookmarked('collage', $CollageID)) {
+    $bookmark = new \Gazelle\Bookmark;
+    if ($bookmark->isCollageBookmarked($LoggedUser['ID'], $CollageID)) {
 ?>
             <a href="#" id="bookmarklink_collage_<?=$CollageID?>" class="brackets" onclick="Unbookmark('collage', <?=$CollageID?>, 'Bookmark'); return false;">Remove bookmark</a>
 <?php
@@ -284,15 +284,15 @@ if ($CollageCovers != 0) {
 <?php
     if ($NumGroups > $CollageCovers) { ?>
         <div class="linkbox pager" style="clear: left;" id="pageslinksdiv">
-            <span id="firstpage" class="invisible"><a href="#" class="pageslink" onclick="collageShow.page(0); return false;"><strong>&lt;&lt; First</strong></a> | </span>
-            <span id="prevpage" class="invisible"><a href="#" class="pageslink" onclick="collageShow.prevPage(); return false;"><strong>&lt; Prev</strong></a> | </span>
+            <span id="firstpage" class="invisible"><a href="#" class="pageslink" onclick="collageShow.page(0); return false;"><strong>&laquo; First</strong></a> | </span>
+            <span id="prevpage" class="invisible"><a href="#" class="pageslink" onclick="collageShow.prevPage(); return false;"><strong>&lsaquo; Prev</strong></a> | </span>
 <?php
         for ($i = 0; $i < $NumGroups / $CollageCovers; $i++) { ?>
             <span id="pagelink<?=$i?>" class="<?=($i > 4 ? 'hidden' : '')?><?=($i == 0 ? 'selected' : '')?>"><a href="#" class="pageslink" onclick="collageShow.page(<?=$i?>, this); return false;"><strong><?=$CollageCovers * $i + 1?>-<?=min($NumGroups, $CollageCovers * ($i + 1))?></strong></a><?=(($i != ceil($NumGroups / $CollageCovers) - 1) ? ' | ' : '')?></span>
 <?php   } ?>
             <span id="nextbar" class="<?=($NumGroups / $CollageCovers > 5) ? 'hidden' : ''?>"> | </span>
-            <span id="nextpage"><a href="#" class="pageslink" onclick="collageShow.nextPage(); return false;"><strong>Next &gt;</strong></a></span>
-            <span id="lastpage" class="<?=(ceil($NumGroups / $CollageCovers) == 2 ? 'invisible' : '')?>"> | <a href="#" class="pageslink" onclick="collageShow.page(<?=ceil($NumGroups / $CollageCovers) - 1?>); return false;"><strong>Last &gt;&gt;</strong></a></span>
+            <span id="nextpage"><a href="#" class="pageslink" onclick="collageShow.nextPage(); return false;"><strong>Next &rsaquo;</strong></a></span>
+            <span id="lastpage" class="<?=(ceil($NumGroups / $CollageCovers) == 2 ? 'invisible' : '')?>"> | <a href="#" class="pageslink" onclick="collageShow.page(<?=ceil($NumGroups / $CollageCovers) - 1?>); return false;"><strong>Last &raquo;</strong></a></span>
         </div>
         <script type="text/javascript">//<![CDATA[
             collageShow.init(<?=json_encode($CollagePages)?>);
@@ -311,4 +311,3 @@ if ($CollageCovers != 0) {
 </div>
 <?php
 View::show_footer();
-?>

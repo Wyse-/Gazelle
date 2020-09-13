@@ -1,26 +1,33 @@
 <?php
 authorize();
 
-// Quick SQL injection check
 if (!$_REQUEST['groupid'] || !is_number($_REQUEST['groupid'])) {
     error(404);
 }
-// End injection check
-
 if (!check_perms('site_edit_wiki')) {
+    error(403);
+}
+if (!check_perms('torrents_edit_vanityhouse') && isset($_POST['vanity_house'])) {
     error(403);
 }
 
 // Variables for database input
-$UserID = $LoggedUser['ID'];
-$GroupID = $_REQUEST['groupid'];
+$UserID = (int)$LoggedUser['ID'];
+$GroupID = (int)$_REQUEST['groupid'];
 
 // Get information for the group log
-$DB->query("
-    SELECT VanityHouse
-    FROM torrents_group
-    WHERE ID = '$GroupID'");
-if (!(list($OldVH) = $DB->next_record())) {
+list ($OldVH, $oldNoCoverArt) = $DB->row("
+    SELECT
+        tg.VanityHouse,
+        CASE WHEN tgha.TorrentGroupID IS NULL THEN 0 ELSE 1 END as noCoverArt
+    FROM torrents_group tg
+    LEFT JOIN torrent_group_has_attr AS tgha ON (tgha.TorrentGroupID = tg.ID
+        AND tgha.TorrentGroupAttrID = (SELECT tga.ID FROM torrent_group_attr tga WHERE tga.Name = 'no-cover-art')
+    )
+    WHERE tg.ID = ?
+    ", $GroupID
+);
+if ($OldVH === null) {
     error(404);
 }
 
@@ -67,11 +74,12 @@ if (!empty($_GET['action']) && $_GET['action'] == 'revert') { // if we're revert
     if (($GroupInfo = $Cache->get_value('torrents_details_'.$GroupID)) && !isset($GroupInfo[0][0])) {
         $GroupCategoryID = $GroupInfo[0]['CategoryID'];
     } else {
-        $DB->query("
+        $GroupCategoryID = $DB->scalar("
             SELECT CategoryID
             FROM torrents_group
-            WHERE ID = '$GroupID'");
-        list($GroupCategoryID) = $DB->next_record();
+            WHERE ID = ?
+            ", $GroupID
+        );
     }
     if ($GroupCategoryID == 1 && !isset($ReleaseTypes[$ReleaseType]) || $GroupCategoryID != 1 && $ReleaseType) {
         error(403);
@@ -82,62 +90,87 @@ if (!empty($_GET['action']) && $_GET['action'] == 'revert') { // if we're revert
         $Image = '';
     }
     ImageTools::blacklisted($Image);
-    $Summary = db_string($_POST['summary']);
 }
 
 // Insert revision
 if (empty($RevisionID)) { // edit
-    $DB->query("
+    $DB->prepared_query("
+        UPDATE torrents_group SET
+            ReleaseType = ?
+        WHERE ID = ?
+        ", $ReleaseType, $GroupID
+    );
+    $DB->prepared_query("
         INSERT INTO wiki_torrents
-            (PageID, Body, Image, UserID, Summary, Time)
-        VALUES
-            ('$GroupID', '".db_string($Body)."', '".db_string($Image)."', '$UserID', '$Summary', '".sqltime()."')");
-
-    $DB->query("
-        UPDATE torrents_group
-        SET ReleaseType = '$ReleaseType'
-        WHERE ID = '$GroupID'");
+               (PageID, Body, Image, UserID, Summary)
+        VALUES (?,      ?,    ?,     ?,      ?)
+        ", $GroupID, $Body, $Image, $UserID, trim($_POST['summary'])
+    );
     Torrents::update_hash($GroupID);
 }
 else { // revert
-    $DB->query("
+    list($PossibleGroupID, $Body, $Image) = $DB->row("
         SELECT PageID, Body, Image
         FROM wiki_torrents
-        WHERE RevisionID = '$RevisionID'");
-    list($PossibleGroupID, $Body, $Image) = $DB->next_record();
+        WHERE RevisionID = ?
+        ", $RevisionID
+    );
     if ($PossibleGroupID != $GroupID) {
         error(404);
     }
-
-    $DB->query("
+    $DB->prepared_query("
         INSERT INTO wiki_torrents
-            (PageID, Body, Image, UserID, Summary, Time)
-        SELECT '$GroupID', Body, Image, '$UserID', 'Reverted to revision $RevisionID', '".sqltime()."'
-        FROM wiki_artists
-        WHERE RevisionID = '$RevisionID'");
+               (PageID, Body, Image, UserID, Summary)
+        SELECT  ?,      Body, Image, ?,      ?
+        FROM wiki_torrents
+        WHERE RevisionID = ?
+        ", $GroupID, $UserID, "Reverted to revision $RevisionID",
+            $RevisionID
+    );
 }
-
 $RevisionID = $DB->inserted_id();
 
-$Body = db_string($Body);
-$Image = db_string($Image);
-
 // Update torrents table (technically, we don't need the RevisionID column, but we can use it for a join which is nice and fast)
-$DB->query("
-    UPDATE torrents_group
-    SET
-        RevisionID = '$RevisionID',
-        ".((isset($VanityHouse)) ? "VanityHouse = '$VanityHouse'," : '')."
-        WikiBody = '$Body',
-        WikiImage = '$Image'
-    WHERE ID='$GroupID'");
-// Log VH changes
-if ($OldVH != $VanityHouse && check_perms('torrents_edit_vanityhouse')) {
-    $DB->query("
-        INSERT INTO group_log
-            (GroupID, UserID, Time, Info)
-        VALUES
-            ('$GroupID',".$LoggedUser['ID'].",'".sqltime()."','".db_string('Vanity House status changed to '.($VanityHouse ? 'true' : 'false'))."')");
+$DB->prepared_query("
+    UPDATE torrents_group SET
+        RevisionID  = ?,
+        VanityHouse = ?,
+        WikiBody    = ?,
+        WikiImage   = ?
+    WHERE ID = ?
+    ", $RevisionID, $VanityHouse, $Body, $Image, $GroupID
+);
+
+$noCoverArt = (isset($_POST['no_cover_art']) ? 1 : 0);
+
+$logInfo = [];
+if ($_POST['summary']) {
+    $logInfo[] = trim($_POST['summary']);
+}
+if ($noCoverArt != $oldNoCoverArt) {
+    if ($noCoverArt) {
+        $DB->prepared_query("
+            INSERT INTO torrent_group_has_attr
+               (TorrentGroupID, TorrentGroupAttrID)
+            VALUES (?, (SELECT ID FROM torrent_group_attr WHERE Name = 'no-cover-art'))
+            ", $GroupID
+        );
+        $logInfo[] = 'No cover art exception added';
+    } else {
+        $DB->prepared_query("
+            DELETE FROM torrent_group_has_attr
+            WHERE TorrentGroupAttrID = (SELECT ID FROM torrent_group_attr WHERE Name = 'no-cover-art')
+                AND TorrentGroupID = ?
+            ", $GroupID
+        );
+        $logInfo[] = 'No cover art exception removed';
+    }
+}
+if ($OldVH != $VanityHouse) {
+    $logInfo[] = 'Vanity House status changed to '. ($VanityHouse ? 'true' : 'false');
+}
+if ($logInfo) {
+    Torrents::write_group_log($GroupID, 0, $LoggedUser['ID'], implode(', ', $logInfo), 0);
 }
 
 // There we go, all done!
@@ -153,7 +186,7 @@ $Cache->deleteMulti($DB->collect('ck', false));
 
 //Fix Recent Uploads/Downloads for image change
 $DB->prepared_query("
-    SELECT DISTINCT concat('user_recent_upload_' , UserID) as ck
+    SELECT DISTINCT concat('user_recent_up_' , UserID) as ck
     FROM torrents AS t
     LEFT JOIN torrents_group AS tg ON (t.GroupID = tg.ID)
     WHERE tg.ID = ?
@@ -172,7 +205,7 @@ if ($DB->has_results()) {
             SELECT DISTINCT concat('user_recent_snatch_', uid) as ck
             FROM xbt_snatched
             WHERE fid IN (%s)
-            ", implode(', ', array_fill(0, count($IDs), '?'))
+            ", placeholders($IDs)
         ), ...$IDs
     );
     $Cache->deleteMulti($DB->collect('ck', false));

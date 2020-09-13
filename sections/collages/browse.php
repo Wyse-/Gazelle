@@ -26,10 +26,11 @@ if (!empty($_GET['type']) && in_array($_GET['type'], ['c.name', 'description']))
     $searchField = 'c.name';
 }
 
+$tagMan = new \Gazelle\Manager\Tag;
 if (!empty($_GET['tags'])) {
     $Tags = explode(',', db_string(trim($_GET['tags'])));
     foreach ($Tags as $ID => $Tag) {
-        $Tags[$ID] = Misc::sanitize_tag($Tag);
+        $Tags[$ID] = $tagMan->sanitize($Tag);
     }
 }
 
@@ -123,9 +124,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'mine') {
             );
             $collageIDs = $DB->collect('CollageID');
             if ($collageIDs) {
-                $SQL .= "\nAND c.ID IN ("
-                    . implode(', ', array_fill(0, count($collageIDs), '?'))
-                    . ')';
+                $SQL .= "\nAND c.ID IN (" . placeholders($collageIDs) . ')';
                 $Args = array_merge($Args, $collageIDs);
             }
         } else {
@@ -139,9 +138,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'mine') {
     }
 
     if (!empty($Categories)) {
-        $SQL .= "\nAND CategoryID IN ("
-            . implode(', ', array_fill(0, count($Categories), '?'))
-            . ')';
+        $SQL .= "\nAND CategoryID IN (" . placeholders($Categories) . ')';
         $Args = array_merge($Args, $Categories);
     }
 }
@@ -338,7 +335,7 @@ foreach ($Collages as $Collage) {
 ?>
     <tr class="row<?=$Row?><?= $BookmarkView ? " bookmark_$ID" : ''; ?>">
         <td class="td_collage_category">
-            <a href="collages.php?action=search&amp;cats[<? (int)$CategoryID ?>]=1"><?= $CollageCats[(int)$CategoryID] ?></a>
+            <a href="collages.php?action=search&amp;cats[<?= (int)$CategoryID ?>]=1"><?= $CollageCats[(int)$CategoryID] ?></a>
         </td>
         <td class="td_info">
             <a href="collages.php?id=<?=$ID?>"><?=$Name?></a>

@@ -37,12 +37,6 @@ if (!isset($_GET['threadid']) || !is_number($_GET['threadid'])) {
     $ThreadID = $_GET['threadid'];
 }
 
-if (isset($LoggedUser['PostsPerPage'])) {
-    $PerPage = $LoggedUser['PostsPerPage'];
-} else {
-    $PerPage = POSTS_PER_PAGE;
-}
-
 //---------- Get some data to start processing
 
 // Thread information, constant across all pages
@@ -52,8 +46,6 @@ if ($ThreadInfo === null) {
 }
 $ForumID = $ThreadInfo['ForumID'];
 
-$IsDonorForum = $ForumID == DONOR_FORUM ? true : false;
-
 // Make sure they're allowed to look at the page
 if (!Forums::check_forumperm($ForumID)) {
     error(403);
@@ -61,6 +53,8 @@ if (!Forums::check_forumperm($ForumID)) {
 //Escape strings for later display
 $ThreadTitle = display_str($ThreadInfo['Title']);
 $ForumName = display_str($Forums[$ForumID]['Name']);
+$IsDonorForum = $ForumID == DONOR_FORUM ? true : false;
+$PerPage = $LoggedUser['PostsPerPage'] ?? POSTS_PER_PAGE;
 
 //Post links utilize the catalogue & key params to prevent issues with custom posts per page
 if ($ThreadInfo['Posts'] > $PerPage) {
@@ -87,7 +81,7 @@ list($Page, $Limit) = Format::page_limit($PerPage, min($ThreadInfo['Posts'],$Pos
 if (($Page - 1) * $PerPage > $ThreadInfo['Posts']) {
     $Page = ceil($ThreadInfo['Posts'] / $PerPage);
 }
-list($CatalogueID,$CatalogueLimit) = Format::catalogue_limit($Page, $PerPage, THREAD_CATALOGUE);
+list($CatalogueID, $CatalogueLimit) = Format::catalogue_limit($Page, $PerPage, THREAD_CATALOGUE);
 
 // Cache catalogue from which the page is selected, allows block caches and future ability to specify posts per page
 if (!$Catalogue = $Cache->get_value("thread_{$ThreadID}_catalogue_$CatalogueID")) {
@@ -110,7 +104,7 @@ if (!$Catalogue = $Cache->get_value("thread_{$ThreadID}_catalogue_$CatalogueID")
         $Cache->cache_value("thread_{$ThreadID}_catalogue_$CatalogueID", $Catalogue, 0);
     }
 }
-$Thread = Format::catalogue_select($Catalogue, $Page, $PerPage, THREAD_CATALOGUE);
+$Thread = array_slice($Catalogue, (($PerPage * $Page - $PerPage) % THREAD_CATALOGUE), $PerPage, true);
 $LastPost = end($Thread);
 $LastPost = $LastPost['ID'];
 $FirstPost = reset($Thread);
@@ -142,17 +136,12 @@ if (!$ThreadInfo['IsLocked'] || $ThreadInfo['IsSticky']) {
     }
 }
 
-//Handle subscriptions
-$UserSubscriptions = Subscriptions::get_subscriptions();
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
+$isSubscribed = $subscription->isSubscribed($ThreadID);
 
-if (empty($UserSubscriptions)) {
-    $UserSubscriptions = [];
-}
-
-if (in_array($ThreadID, $UserSubscriptions)) {
+if ($isSubscribed) {
     $Cache->delete_value('subscriptions_user_new_'.$LoggedUser['ID']);
 }
-
 
 $QuoteNotificationsCount = $Cache->get_value('notify_quoted_' . $LoggedUser['ID']);
 if ($QuoteNotificationsCount === false || $QuoteNotificationsCount > 0) {
@@ -168,18 +157,18 @@ if ($QuoteNotificationsCount === false || $QuoteNotificationsCount > 0) {
 }
 
 // Start printing
-View::show_header($ThreadInfo['Title'] . ' &lt; '.$Forums[$ForumID]['Name'].' &lt; Forums','comments,subscriptions,bbcode', $IsDonorForum ? 'donor' : '');
+View::show_header($ThreadInfo['Title'] . ' &lsaquo; '.$Forums[$ForumID]['Name'].' &lsaquo; Forums','comments,subscriptions,bbcode', $IsDonorForum ? 'donor' : '');
 ?>
 <div class="thin">
     <h2>
-        <a href="forums.php">Forums</a> &gt;
-        <a href="forums.php?action=viewforum&amp;forumid=<?=$ThreadInfo['ForumID']?>"><?=$ForumName?></a> &gt;
+        <a href="forums.php">Forums</a> &rsaquo;
+        <a href="forums.php?action=viewforum&amp;forumid=<?=$ThreadInfo['ForumID']?>"><?=$ForumName?></a> &rsaquo;
         <?=$ThreadTitle?>
     </h2>
     <div class="linkbox">
         <div class="center">
             <a href="reports.php?action=report&amp;type=thread&amp;id=<?=$ThreadID?>" class="brackets">Report thread</a>
-            <a href="#" onclick="Subscribe(<?=$ThreadID?>);return false;" id="subscribelink<?=$ThreadID?>" class="brackets"><?=(in_array($ThreadID, $UserSubscriptions) ? 'Unsubscribe' : 'Subscribe')?></a>
+            <a href="#" onclick="Subscribe(<?=$ThreadID?>);return false;" id="subscribelink<?=$ThreadID?>" class="brackets"><?= $isSubscribed ? 'Unsubscribe' : 'Subscribe' ?></a>
             <a href="#" onclick="$('#searchthread').gtoggle(); this.innerHTML = (this.innerHTML == 'Search this thread' ? 'Hide search' : 'Search this thread'); return false;" class="brackets">Search this thread</a>
         </div>
         <div id="searchthread" class="hidden center">
@@ -238,33 +227,8 @@ if (count($transitions) > 0) {
 <?php
 }
 if ($ThreadInfo['NoPoll'] == 0) {
-    if (!list($Question, $Answers, $Votes, $Featured, $Closed) = $Cache->get_value("polls_$ThreadID")) {
-        $DB->query("
-            SELECT Question, Answers, Featured, Closed
-            FROM forums_polls
-            WHERE TopicID = '$ThreadID'");
-        list($Question, $Answers, $Featured, $Closed) = $DB->next_record(MYSQLI_NUM, [1]);
-        $Answers = unserialize($Answers);
-        $DB->query("
-            SELECT Vote, COUNT(UserID)
-            FROM forums_polls_votes
-            WHERE TopicID = '$ThreadID'
-            GROUP BY Vote");
-        $VoteArray = $DB->to_array(false, MYSQLI_NUM);
-
-        $Votes = [];
-        foreach ($VoteArray as $VoteSet) {
-            list($Key,$Value) = $VoteSet;
-            $Votes[$Key] = $Value;
-        }
-
-        foreach (array_keys($Answers) as $i) {
-            if (!isset($Votes[$i])) {
-                $Votes[$i] = 0;
-            }
-        }
-        $Cache->cache_value("polls_$ThreadID", [$Question, $Answers, $Votes, $Featured, $Closed], 0);
-    }
+    $forum = new \Gazelle\Forum($ForumID);
+    list($Question, $Answers, $Votes, $Featured, $Closed) = $forum->pollData($ThreadID);
 
     if (!empty($Votes)) {
         $TotalVotes = array_sum($Votes);
@@ -276,13 +240,14 @@ if ($ThreadInfo['NoPoll'] == 0) {
 
     $RevealVoters = in_array($ForumID, $ForumsRevealVoters);
     //Polls lose the you voted arrow thingy
-    $DB->query("
+    $UserResponse = $DB->scalar("
         SELECT Vote
         FROM forums_polls_votes
-        WHERE UserID = '".$LoggedUser['ID']."'
-            AND TopicID = '$ThreadID'");
-    list($UserResponse) = $DB->next_record();
-    if (!empty($UserResponse) && $UserResponse != 0) {
+        WHERE UserID = ?
+            AND TopicID = ?
+        ", $LoggedUser['ID'], $ThreadID
+    );
+    if ($UserResponse > 0) {
         $Answers[$UserResponse] = '&raquo; '.$Answers[$UserResponse];
     } else {
         if (!empty($UserResponse) && $RevealVoters) {
@@ -292,7 +257,7 @@ if ($ThreadInfo['NoPoll'] == 0) {
 
 ?>
     <div class="box thin clear">
-        <div class="head colhead_dark"><strong>Poll<?php if ($Closed) { echo ' [Closed]'; } ?><?php if ($Featured && $Featured !== '0000-00-00 00:00:00') { echo ' [Featured]'; } ?></strong> <a href="#" onclick="$('#threadpoll').gtoggle(); log_hit(); return false;" class="brackets">View</a></div>
+        <div class="head colhead_dark"><strong>Poll<?php if ($Closed) { echo ' [Closed]'; } ?><?php if ($Featured) { echo ' [Featured]'; } ?></strong> <a href="#" onclick="$('#threadpoll').gtoggle(); log_hit(); return false;" class="brackets">View</a></div>
         <div class="pad<?php if (/*$LastRead !== null || */$ThreadInfo['IsLocked']) { echo ' hidden'; } ?>" id="threadpoll">
             <p><strong><?=display_str($Question)?></strong></p>
 <?php    if ($UserResponse !== null || $Closed || $ThreadInfo['IsLocked'] || !Forums::check_forumperm($ForumID)) { ?>
@@ -314,10 +279,10 @@ if ($ThreadInfo['NoPoll'] == 0) {
                         <span class="center_poll" style="width: <?=number_format($Ratio * 100, 2)?>%;"></span>
                         <span class="right_poll"></span>
                     </li>
-<?php            }
-            if ($Votes[0] > 0) {
+<?php       }
+            if ($Votes[0] ?? 0 > 0) {
 ?>
-                <li><?=($UserResponse == '0' ? '&raquo; ' : '')?>(Blank) (<?=number_format((float)($Votes[0] / $TotalVotes * 100), 2)?>%)</li>
+                <li><?=($UserResponse == '0' ? '&raquo; ' : '')?>(Blank) (<?=number_format((float)($Votes[0] ?? 0 / $TotalVotes * 100), 2)?>%)</li>
                 <li class="graph">
                     <span class="left_poll"></span>
                     <span class="center_poll" style="width: <?=number_format((float)($Votes[0] / $MaxVotes * 100), 2)?>%;"></span>
@@ -419,7 +384,7 @@ if ($ThreadInfo['NoPoll'] == 0) {
             </div>
 <?php    }
     if (check_perms('forums_polls_moderate') && !$RevealVoters) {
-        if (!$Featured || $Featured == '0000-00-00 00:00:00') {
+        if (!$Featured) {
 ?>
             <form class="manage_form" name="poll" action="forums.php" method="post">
                 <input type="hidden" name="action" value="poll_mod" />
@@ -442,7 +407,7 @@ if ($ThreadInfo['NoPoll'] == 0) {
 <?php
 } //End Polls
 
-//Sqeeze in stickypost
+// Squeeze in stickypost
 if ($ThreadInfo['StickyPostID']) {
     if ($ThreadInfo['StickyPostID'] != $Thread[0]['ID']) {
         array_unshift($Thread, $ThreadInfo['StickyPost']);
@@ -455,7 +420,6 @@ if ($ThreadInfo['StickyPostID']) {
 foreach ($Thread as $Key => $Post) {
     list($PostID, $AuthorID, $AddedTime, $Body, $EditedUserID, $EditedTime, $EditedUsername) = array_values($Post);
     list($AuthorID, $Username, $PermissionID, $Paranoia, $Artist, $Donor, $Warned, $Avatar, $Enabled, $UserTitle) = array_values(Users::user_info($AuthorID));
-
 ?>
 <table class="forum_post wrap_overflow box vertical_margin<?php
     if (((!$ThreadInfo['IsLocked'] || $ThreadInfo['IsSticky'])
@@ -557,8 +521,8 @@ foreach ($Thread as $Key => $Post) {
 </table>
 <?php } ?>
 <div class="breadcrumbs">
-    <a href="forums.php">Forums</a> &gt;
-    <a href="forums.php?action=viewforum&amp;forumid=<?=$ThreadInfo['ForumID']?>"><?=$ForumName?></a> &gt;
+    <a href="forums.php">Forums</a> &rsaquo;
+    <a href="forums.php?action=viewforum&amp;forumid=<?=$ThreadInfo['ForumID']?>"><?=$ForumName?></a> &rsaquo;
     <?=$ThreadTitle?>
 </div>
 <div class="linkbox">
@@ -737,4 +701,5 @@ if (check_perms('site_moderate_forums')) {
 } // If user is moderator
 ?>
 </div>
-<?php View::show_footer();
+<?php
+view::show_footer();

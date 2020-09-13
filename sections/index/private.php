@@ -285,6 +285,7 @@ if (($TopicID = $Cache->get_value('polls_featured')) === false) {
     $DB->prepared_query('
         SELECT TopicID
         FROM forums_polls
+        WHERE Featured IS NOT NULL
         ORDER BY Featured DESC
         LIMIT 1
     ');
@@ -292,40 +293,8 @@ if (($TopicID = $Cache->get_value('polls_featured')) === false) {
     $Cache->cache_value('polls_featured', $TopicID, 3600 * 6);
 }
 if ($TopicID) {
-    if (($Poll = $Cache->get_value("polls_$TopicID")) === false) {
-        $DB->prepared_query('
-            SELECT Question, Answers, Featured, Closed
-            FROM forums_polls
-            WHERE TopicID = ?
-            ', $TopicID
-        );
-        list($Question, $Answers, $Featured, $Closed) = $DB->next_record(MYSQLI_NUM, [1]);
-        $Answers = unserialize($Answers);
-        $DB->prepared_query("
-            SELECT Vote, count(*)
-            FROM forums_polls_votes
-            WHERE Vote != '0'
-                AND TopicID = ?
-            GROUP BY Vote
-            ", $TopicID
-        );
-        $VoteArray = $DB->to_array(false, MYSQLI_NUM);
-
-        $Votes = [];
-        foreach ($VoteArray as $VoteSet) {
-            list($Key,$Value) = $VoteSet;
-            $Votes[$Key] = $Value;
-        }
-
-        for ($i = 1, $il = count($Answers); $i <= $il; ++$i) {
-            if (!isset($Votes[$i])) {
-                $Votes[$i] = 0;
-            }
-        }
-        $Cache->cache_value("polls_$TopicID", [$Question, $Answers, $Votes, $Featured, $Closed], 86400 + rand(0, 3600));
-    } else {
-        list($Question, $Answers, $Votes, $Featured, $Closed) = $Poll;
-    }
+    $forum = new \Gazelle\Forum;
+    list($Question, $Answers, $Votes, $Featured, $Closed) = $forum->pollData($TopicID);
 
     if (!empty($Votes)) {
         $TotalVotes = array_sum($Votes);
@@ -335,15 +304,14 @@ if ($TopicID) {
         $MaxVotes = 0;
     }
 
-    $DB->prepared_query('
+    $UserResponse = $DB->scalar("
         SELECT Vote
         FROM forums_polls_votes
         WHERE UserID = ?
             AND TopicID = ?
-        ', $LoggedUser['ID'], $TopicID
+        ", $LoggedUser['ID'], $TopicID
     );
-    list($UserResponse) = $DB->next_record();
-    if (!empty($UserResponse) && $UserResponse != 0) {
+    if ($UserResponse > 0) {
         $Answers[$UserResponse] = '&raquo; '.$Answers[$UserResponse];
     }
 ?>
@@ -394,72 +362,31 @@ if ($TopicID) {
 ?>
     </div>
     <div class="main_column">
+        <div id="last_uploads" class="box news_post">
+            <div class="head">
+                <strong>Latest Uploads</strong>
+            </div>
+            <div class="head">
+            <ul class="collage_images" id="collage_page0">
 <?php
-
-$Recommend = $Cache->get_value('recommend');
-$Recommend_artists = $Cache->get_value('recommend_artists');
-
-if (!is_array($Recommend) || !is_array($Recommend_artists)) {
-    $DB->prepared_query('
-        SELECT
-            tr.GroupID,
-            tr.UserID,
-            u.Username,
-            tg.Name,
-            tg.TagList
-        FROM torrents_recommended AS tr
-        INNER JOIN torrents_group AS tg ON (tg.ID = tr.GroupID)
-        LEFT JOIN users_main AS u ON (u.ID = tr.UserID)
-        ORDER BY tr.Time DESC
-        LIMIT 10
-    ');
-    $Recommend = $DB->to_array();
-    $Cache->cache_value('recommend', $Recommend, 86400 + rand(0, 3600));
-
-    $Recommend_artists = Artists::get_artists($DB->collect('GroupID'));
-    $Cache->cache_value('recommend_artists', $Recommend_artists, 86400 + rand(0, 3600));
-}
-
-if (count($Recommend) >= 4) {
-$Cache->increment('usage_index');
+$torMan = new \Gazelle\Manager\Torrent;
+$latest = $torMan->latestUploads(5);
+foreach ($latest as $upload) {
+    $title = sprintf("%s<br />(%s)<br />uploaded by %s %s",
+        display_str($upload['name']), display_str($upload['tags']), display_str($upload['username']), time_diff($upload['uploadDate'], 2, false));
+    $alt = str_replace($title, '<br />', ' ');
 ?>
-    <div class="box" id="recommended">
-        <div class="head colhead_dark">
-            <strong>Latest Vanity House additions</strong>
-            <a href="#" onclick="$('#vanityhouse').gtoggle(); this.innerHTML = (this.innerHTML == 'Hide' ? 'Show' : 'Hide'); return false;" class="brackets">Show</a>
+                <li class="image_group_<?= $upload['groupId'] ?>">
+                <a href="torrents.php?id=<?= $upload['groupId'] ?>&torrentid=<?= $upload['torrentId'] ?>#torrent<?= $upload['torrentId'] ?>">
+                <img class="tooltip_interactive" src="<?= ImageTools::process($upload['imageUrl'] , true) ?>" alt="<?= $alt ?>" title="<?= $title ?>"
+                    data-title-plain="<?= $alt ?>" width="118" /></a>
+                </li>
+<?php } ?>
+            </ul>
+            </div>
         </div>
+<?php
 
-        <table class="torrent_table hidden" id="vanityhouse">
-<?php
-    foreach ($Recommend as $Recommendations) {
-        list($GroupID, $UserID, $Username, $GroupName, $TagList) = $Recommendations;
-        $TagsStr = '';
-        if ($TagList) {
-            // No vanity.house tag.
-            $Tags = explode(' ', str_replace('_', '.', $TagList));
-            $TagLinks = [];
-            foreach ($Tags as $Tag) {
-                if ($Tag == 'vanity.house') {
-                    continue;
-                }
-                $TagLinks[] = "<a href=\"torrents.php?action=basic&amp;taglist=$Tag\">$Tag</a> ";
-            }
-            $TagStr = "<br />\n<div class=\"tags\">".implode(', ', $TagLinks).'</div>';
-        }
-?>
-            <tr>
-                <td>
-                    <?=Artists::display_artists($Recommend_artists[$GroupID]) ?>
-                    <a href="torrents.php?id=<?=$GroupID?>"><?=$GroupName?></a> (by <?=Users::format_username($UserID, false, false, false)?>)
-                    <?=$TagStr?>
-                </td>
-            </tr>
-<?php    } ?>
-        </table>
-    </div>
-<!-- END recommendations section -->
-<?php
-}
 $Count = 0;
 foreach ($News as $NewsItem) {
     list($NewsID, $Title, $Body, $NewsTime) = $NewsItem;

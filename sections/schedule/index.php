@@ -19,7 +19,7 @@ gc_enable();
 $PCount = chop(shell_exec("/usr/bin/pgrep -cf schedule.php"));
 if ($PCount > 3) {
     // 3 because the cron job starts two processes and pgrep finds itself
-    die("schedule.php is already running. Exiting ($PCount)\n");
+    die();
 }
 
 if (PHP_SAPI === 'cli') {
@@ -30,7 +30,7 @@ if (PHP_SAPI === 'cli') {
     $sqltime = sqltime();
     echo("Current Time: $sqltime\n\n");
 
-    $scheduler = new \Gazelle\Schedule\Scheduler($DB, $Cache);
+    $scheduler = new \Gazelle\Schedule\Scheduler;
     if (isset($argv[2])) {
         $scheduler->runTask(intval($argv[2]), true);
     } else {
@@ -46,7 +46,7 @@ if (PHP_SAPI === 'cli') {
     $canEdit = check_perms('admin_periodic_task_manage');
     include(SERVER_ROOT.'/sections/tools/development/periodic_links.php');
     echo('<pre>');
-    $scheduler = new \Gazelle\Schedule\Scheduler($DB, $Cache);
+    $scheduler = new \Gazelle\Schedule\Scheduler;
     if (isset($_GET['id'])) {
         $scheduler->runTask(intval($_GET['id']), true);
     } else {

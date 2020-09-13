@@ -122,6 +122,24 @@ Your torrent was reported because it contained material from the DNU list or fro
         ],
 
         '1' => [ //Music Resolves
+            'checksum_trump' =>  [
+                'priority' => '10',
+                'reason' => '24',
+                'title' => 'Checksum Trump',
+                'report_messages' => [
+                    'Please make certain that your checksum trump is valid (rules 2.2.10 and below). Only CD media rips are subject to checksum trumps.',
+                    'Please make sure you are reporting the torrent <strong class="important_text">which has been trumped</strong> and should be deleted, not the torrent that you think should remain on site.'
+                ],
+                'report_fields' => [
+                    'sitelink' => '1'
+                ],
+                'resolve_options' => [
+                    'upload' => '0',
+                    'warn' => '0',
+                    'delete' => '1',
+                    'pm' => '[rule]2.2.10.3[/rule]. A FLAC upload with an EAC, XLD, or whipper rip log with a valid checksum that scores 100% on the log checker replaces one with a lower score or bad or missing checksum. No log scoring less than 100% can trump an already existing one that scores under 100%. Your torrent was reported because it was trumped by another torrent that was ripped with a log file that scored 100%.'
+                ]
+            ],
             'tag_trump' =>  [
                 'priority' => '50',
                 'reason' => '4',
@@ -206,7 +224,7 @@ Your torrent was reported because it was trumped by another torrent with improve
                 'title' => 'Track(s) Missing',
                 'report_messages' => [
                     'Please list the track number and title of the missing track.',
-                    'If possible, please provide a link to Amazon.com or another source showing the proper track listing.'
+                    'Please provide a link to a reputable release catalogue such as Discogs that shows the correct track listing.'
                 ],
                 'report_fields' => [
                     'track' => '2',
@@ -226,7 +244,7 @@ Your torrent was reported because it was missing tracks.'
                 'reason' => '6',
                 'title' => 'Disc(s) Missing',
                 'report_messages' => [
-                    'If possible, please provide a link to Amazon.com or another source showing the proper track listing.'
+                    'Please provide a link to a reputable release catalogue such as Discogs, showing the correct track listing and specify which discs are missing.'
                 ],
                 'report_fields' => [
                     'track' => '0',
@@ -264,8 +282,8 @@ Your torrent was reported because it was missing discs.'
                 'reason' => '-1',
                 'title' => 'Bonus Tracks Only',
                 'report_messages' => [
-                    'If possible, please provide a link to Amazon.com or another source showing the proper track listing.',
-                    'Per <a href="rules.php?p=upload#r2.4.5">rule 2.4.5</a>, exclusive WEB-sourced bonus tracks are allowed to be uploaded separately.'
+                    'Please provide a link to a reputable release catalogue such as Discogs, that shows the correct track listing.',
+                    'Per [rule]2.4.5[/rule], exclusive WEB-sourced bonus tracks are allowed to be uploaded separately.'
                 ],
                 'report_fields' => [
                     'track' => '0',
@@ -322,7 +340,7 @@ Your torrent was reported because it contained one or more audio files that did 
                 'reason' => '11',
                 'title' => 'Mutt Rip',
                 'report_messages' => [
-                    "Please list at least two (2) tracks which have different bitrates and/or encoders."
+                    "Please list at least two (2) tracks which have different bitrates and/or encoders, specifying the differences the tracks."
                 ],
                 'report_fields' => [
                     'track' => '0'
@@ -340,7 +358,7 @@ Your torrent was reported because it contained one or more audio files that were
                 'reason' => '18',
                 'title' => 'Unsplit Album Rip',
                 'report_messages' => [
-                    "If possible, please provide a link to Amazon.com or another source showing the proper track listing.",
+                    "Please provide a link to a reputable release catalogue such as Discogs, that shows the correct track listing.",
                     "This option is for uploads of CDs ripped as a single track when it should be split as on the CD.",
                     "This option is not to be confused with uploads of a single track, taken from a CD with multiple tracks (Tracks Missing)."
                 ],
@@ -501,6 +519,25 @@ The only allowable media formats are CD, DVD, Vinyl, Soundboard, SACD, DAT, Cass
 Your torrent was reported because it consisted of a discography.'
                 ]
             ],
+            'extra_files' => [
+                'priority' => '95',
+                'reason' => '23',
+                'title' => 'Extraneous Files',
+                'report_messages' => [
+                    "Please include as much information as possible to verify the report, identifying the tracks or files that are not part of the release."
+                ],
+                'report_fields' => [
+                    'link' => '0'
+                ],
+                'resolve_options' => [
+                    'upload' => '0',
+                    'warn' => '0',
+                    'delete' => '1',
+                    'pm' => '[rule]2.1.6.2[/rule]. Extraneous material was found in this torrent.
+[rule]2.1.6.2[/rule]. The torrent should contain only a single copy of each file that belongs in the release, and no other files that belong to separate releases.
+Your torrent was reported because it contained extra files that do not belong in the release.'
+                ]
+            ],
             'user_discog' => [
                 'priority' => '290',
                 'reason' => '19',
@@ -552,7 +589,7 @@ Your torrent is now eligible for trumping by a better-sounding rip with complete
                     'warn' => '4',
                     'delete' => '1',
                     'pm' => '[rule]2.2.10.9[/rule]. No log editing is permitted.
-[rule]2.2.10.9.1[/rule]. Forging log data is a serious misrepresentation of quality, and will result in a warning and the loss of your uploading privileges when the edited log is found. We recommend that you do not open the rip log file for any reason. However, if you must open the rip log, do not edit anything in the file for any reason. If you discover that one of your software settings is incorrect in the ripping software preferences, you must rip the CD again with the proper settings. Do not consolidate logs under any circumstances. If you must re-rip specific tracks or an entire disc and the rip results happen to have the new log appended to the original, leave them as is. Do not remove any part of either log, and never copy/paste parts of a new log over an old log.
+[rule]2.2.10.9.1[/rule]. Forging log data is a serious misrepresentation of quality, and will result in a warning and the loss of your uploading privileges when the edited log is found. We recommend that you do not open the rip log file for any reason. However, if you must open the rip log, do not edit anything in the file for any reason. If you discover that one of your software settings is incorrect in the ripping software preferences, you must rip the CD again with the correct settings. Do not consolidate logs under any circumstances. If you must re-rip specific tracks or an entire disc and the rip results happen to have the new log appended to the original, leave them as is. Do not remove any part of either log, and never copy/paste parts of a new log over an old log.
 Your torrent was reported because it contained an edited log (either edited by you or someone else). For questions about your uploading privileges, you must PM the staff member who handled this log case.'
                 ]
             ],
@@ -598,7 +635,9 @@ The Uploading Rules require that all uploads contain audio tracks with accurate 
                 'reason' => '13',
                 'title' => 'Skips / Encode Errors',
                 'report_messages' => [
-                    '<strong class="important_text">Please be as thorough as possible and include as much detail as you can. Refer to specific tracks and time positions to justify your report.</strong>'
+                    'If you have not already done so, make sure that your client has marked the torrent as completed and seeding at 100%. You must also perform a force recheck on the torrent to ensure that the files are not corrupted on your end. ',
+                    'Please be as thorough as possible and include as much detail as you can. Identify which tracks have problems, and their nature (silence, glitch, scrambled). Add a time position (mm:ss) if the problem is some distance from the beginning of the track. If the tracks are lossless, supply the output of <tt>flac -d &lt;file.flac&gt;</tt> if possible.',
+                    '<strong class="important_text">We will dismiss as incomplete a report that lacks specific information on the errors and you must state that 1) the download is complete, and 2) you have forced a recheck on the torrent.</strong>'
                 ],
                 'report_fields' => [
                     'track' => '2'
@@ -651,23 +690,6 @@ Your torrent has now been properly scored by the staff.'
                     'delete' => '0'
                 ]
             ],
-            'upload_contest' => [
-                'priority' => '162',
-                'reason' => '-1',
-                'title' => 'Upload Contest Approval Request',
-                'report_messages' => [
-                    'Please include a photograph of the CD next to a piece of paper with your username written on it.',
-                    '<strong class="important_text">Anything included in the proof images field will only be viewable by staff.</strong>'
-                ],
-                'report_fields' => [
-                    'proofimages' => '2'
-                ],
-                'resolve_options' => [
-                    'upload' => '0',
-                    'warn' => '0',
-                    'delete' => '0'
-                ]
-            ]
         ],
 
         '2' => [ //Applications Rules Broken

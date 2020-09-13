@@ -26,6 +26,7 @@ class Text {
         'forum'      => 0,
         'headline'   => 1,
         'hide'       => 1,
+        'hr'         => 0,
         'i'          => 0,
         'img'        => 1,
         'important'  => 0,
@@ -330,9 +331,9 @@ class Text {
                 }
                 switch ($args['action']) {
                     case 'viewforum':
-                        return \Forums::bbcodeForumUrl($args['forumid'], $url) ?? null;
+                        return \Forums::bbcodeForumUrl($args['forumid']) ?? null;
                     case 'viewthread':
-                        return \Forums::bbcodeThreadUrl($args['threadid'], $url) ?? null;
+                        return \Forums::bbcodeThreadUrl($args['threadid'], $args['postid'] ?? null) ?? null;
                 }
                 return null;
 
@@ -471,6 +472,9 @@ class Text {
             //5a) Different for different types of tag. Some tags don't close, others are weird like [*]
             if ($TagName == 'img' && !empty($Tag[3][0])) { //[img=...]
                 $Block = ''; // Nothing inside this tag
+                // Don't need to touch $i
+            } elseif ($TagName == 'hr') {
+                $Block = ''; // Nothing inside this tag either
                 // Don't need to touch $i
             } elseif ($TagName == 'inlineurl') { // We did a big replace early on to turn http:// into [inlineurl]http://
 
@@ -782,6 +786,9 @@ class Text {
                     break;
                 case 's':
                     $Str .= '<span style="text-decoration: line-through;">'.self::to_html($Block['Val'], $Rules).'</span>';
+                    break;
+                case 'hr':
+                    $Str .= '<hr />';
                     break;
                 case 'important':
                     $Str .= '<strong class="important_text">'.self::to_html($Block['Val'], $Rules).'</strong>';

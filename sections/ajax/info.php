@@ -13,7 +13,7 @@ if ($LoggedUser['BytesUploaded'] == 0 && $LoggedUser['BytesDownloaded'] == 0) {
 $MyNews = $LoggedUser['LastReadNews'];
 $CurrentNews = $Cache->get_value('news_latest_id');
 if ($CurrentNews === false) {
-    $DB->query("
+    $DB->prepared_query("
         SELECT ID
         FROM news
         ORDER BY Time DESC
@@ -28,29 +28,27 @@ if ($CurrentNews === false) {
 
 $NewMessages = $Cache->get_value('inbox_new_' . $LoggedUser['ID']);
 if ($NewMessages === false) {
-    $DB->query("
-        SELECT COUNT(UnRead)
+    $NewMessages = $DB->scalar("
+        SELECT count(*)
         FROM pm_conversations_users
-        WHERE UserID = '" . $LoggedUser['ID'] . "'
-            AND UnRead = '1'
-            AND InInbox = '1'");
-    list($NewMessages) = $DB->next_record();
+        WHERE UnRead = '1'
+            AND InInbox = '1'
+            AND UserID = ?
+        ", $LoggedUser['ID']
+    );
     $Cache->cache_value('inbox_new_' . $LoggedUser['ID'], $NewMessages, 0);
 }
 
 if (check_perms('site_torrents_notify')) {
     $NewNotifications = $Cache->get_value('notifications_new_' . $LoggedUser['ID']);
     if ($NewNotifications === false) {
-        $DB->query("
-            SELECT COUNT(UserID)
+        $NewNotifications = $DB->scalar("
+            SELECT count(*)
             FROM users_notify_torrents
-            WHERE UserID = '$LoggedUser[ID]'
-                AND UnRead = '1'");
-        list($NewNotifications) = $DB->next_record();
-        /* if ($NewNotifications && !check_perms('site_torrents_notify')) {
-                $DB->query("DELETE FROM users_notify_torrents WHERE UserID='$LoggedUser[ID]'");
-                $DB->query("DELETE FROM users_notify_filters WHERE UserID='$LoggedUser[ID]'");
-        } */
+            WHERE UnRead = '1'
+                AND UserID = ?
+            ", $LoggedUser['ID']
+        );
         $Cache->cache_value('notifications_new_' . $LoggedUser['ID'], $NewNotifications, 0);
     }
 }
@@ -59,7 +57,7 @@ if (check_perms('site_torrents_notify')) {
 $MyNews = $LoggedUser['LastReadNews'];
 $CurrentNews = $Cache->get_value('news_latest_id');
 if ($CurrentNews === false) {
-    $DB->query("
+    $DB->prepared_query("
         SELECT ID
         FROM news
         ORDER BY Time DESC
@@ -76,7 +74,7 @@ if ($CurrentNews === false) {
 $MyBlog = $LoggedUser['LastReadBlog'];
 $CurrentBlog = $Cache->get_value('blog_latest_id');
 if ($CurrentBlog === false) {
-    $DB->query("
+    $DB->prepared_query("
         SELECT ID
         FROM blog
         WHERE Important = 1
@@ -90,8 +88,7 @@ if ($CurrentBlog === false) {
     $Cache->cache_value('blog_latest_id', $CurrentBlog, 0);
 }
 
-// Subscriptions
-$NewSubscriptions = Subscriptions::has_new_subscriptions();
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
 
 json_print("success", [
     'username' => $LoggedUser['Username'],
@@ -103,7 +100,7 @@ json_print("success", [
         'notifications' => (int)$NewNotifications,
         'newAnnouncement' => $MyNews < $CurrentNews,
         'newBlog' => $MyBlog < $CurrentBlog,
-        'newSubscriptions' => $NewSubscriptions == 1
+        'newSubscriptions' => $subscription->unread() > 0,
     ],
     'userstats' => [
         'uploaded' => (int)$LoggedUser['BytesUploaded'],
@@ -113,5 +110,3 @@ json_print("success", [
         'class' => $ClassLevels[$LoggedUser['Class']]['Name']
     ]
 ]);
-
-?>

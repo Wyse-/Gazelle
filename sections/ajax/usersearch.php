@@ -15,36 +15,39 @@ if (isset($_GET['username'])) {
     $_GET['username'] = trim($_GET['username']);
 
     list($Page, $Limit) = Format::page_limit(USERS_PER_PAGE);
-    $DB->query("
+    $DB->prepared_query("
         SELECT
             SQL_CALC_FOUND_ROWS
-            ID,
-            Username,
-            Enabled,
-            PermissionID,
-            Donor,
-            Warned,
-            Avatar
+            um.ID,
+            um.Username,
+            um.Enabled,
+            um.PermissionID,
+            (donor.UserID IS NOT NULL) AS Donor,
+            ui.Warned,
+            ui.Avatar
         FROM users_main AS um
-            JOIN users_info AS ui ON ui.UserID = um.ID
-        WHERE Username LIKE '%".db_string($_GET['username'])."%'
+        INNER JOIN users_info AS ui ON (ui.UserID = um.ID)
+        LEFT JOIN users_levels AS donor ON (donor.UserID = um.ID
+            AND donor.PermissionID = (SELECT ID FROM permissions WHERE Name = 'Donor' LIMIT 1)
+        )
+        WHERE Username LIKE concat('%', ?, '%')
         ORDER BY Username
-        LIMIT $Limit");
-    $Results = $DB->to_array();
+        LIMIT ?
+        ", trim($_GET['username']), $Limit
+    );
+    $Results = $DB->to_array(MYSQLI_NUM);
     $DB->query('SELECT FOUND_ROWS();');
     list($NumResults) = $DB->next_record();
-
 }
 
 $JsonUsers = [];
 foreach ($Results as $Result) {
     list($UserID, $Username, $Enabled, $PermissionID, $Donor, $Warned, $Avatar) = $Result;
-
     $JsonUsers[] = [
         'userId' => (int)$UserID,
         'username' => $Username,
         'donor' => $Donor == 1,
-        'warned' => ($Warned != '0000-00-00 00:00:00'),
+        'warned' => !is_null($Warned),
         'enabled' => ($Enabled == 2 ? false : true),
         'class' => Users::make_class_string($PermissionID),
         'avatar' => $Avatar

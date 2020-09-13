@@ -73,7 +73,7 @@ foreach ($Thread as $Key => $Post) {
         'authorId' => (int)$AuthorID,
         'name' => $Username,
         'donor' => $Donor == 1,
-        'warned' => ($Warned != '0000-00-00 00:00:00'),
+        'warned' => !is_null($Warned),
         'enabled' => ($Enabled == 2 ? false : true),
         'class' => Users::make_class_string($PermissionID),
         'addedTime' => $AddedTime,
@@ -89,11 +89,12 @@ $JsonTags = [];
 foreach ($Request['Tags'] as $Tag) {
     $JsonTags[] = $Tag;
 }
+$bookmark = new \Gazelle\Bookmark;
 json_print('success', [
     'requestId' => (int)$RequestID,
     'requestorId' => (int)$Request['UserID'],
     'requestorName' => $Requestor['Username'],
-    'isBookmarked' => Bookmarks::has_bookmarked('request', $RequestID),
+    'isBookmarked' => $bookmark->isRequestBookmarked($LoggedUser['ID'], $RequestID),
     'requestTax' => $RequestTax,
     'timeAdded' => $Request['TimeAdded'],
     'canEdit' => $CanEdit,

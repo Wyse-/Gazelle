@@ -3,7 +3,8 @@ if (empty($_GET['id']) || !is_number($_GET['id']) || (!empty($_GET['preview']) &
     error(404);
 }
 $UserID = (int)$_GET['id'];
-$Bonus = new \Gazelle\Bonus($DB, $Cache);
+$Bonus = new Gazelle\Bonus;
+$donorMan = new Gazelle\Manager\Donation;
 
 if (!empty($_POST)) {
     authorize();
@@ -12,16 +13,22 @@ if (!empty($_POST)) {
             error(403);
         }
     }
-    if ($_POST['action'] !== 'fltoken') {
-        error(403);
-    }
-    if ($_POST['flsubmit'] !== 'Send') {
+    if ($_POST['action'] !== 'fltoken' || $_POST['flsubmit'] !== 'Send') {
         error(403);
     }
     if (!preg_match('/^fl-(other-[1-4])$/', $_POST['fltype'], $match)) {
         error(403);
     }
-    $FL_OTHER_tokens = $Bonus->purchaseTokenOther($LoggedUser['ID'], $UserID, $match[1], $LoggedUser);
+    try {
+        $FL_OTHER_tokens = $Bonus->purchaseTokenOther($LoggedUser['ID'], $UserID, $match[1]);
+    }
+    catch (Exception $e) {
+        if ($e->getMessage() == 'Bonus:otherToken:no-gift-funds') {
+            error('Purchase of tokens not concluded. Either you lacked funds or they have chosen to decline FL tokens.');
+        } else {
+            error(0);
+        }
+    }
 }
 $Preview = isset($_GET['preview']) ? $_GET['preview'] : 0;
 if ($UserID == $LoggedUser['ID']) {
@@ -36,86 +43,42 @@ if ($UserID == $LoggedUser['ID']) {
     $OwnProfile = false;
     //Don't allow any kind of previewing on others' profiles
     $Preview = 0;
-    $FL_Items = $Bonus->getListOther(G::$LoggedUser['BonusPoints']);
+    $FL_Items = $Bonus->getListOther($LoggedUser['BonusPoints']);
 }
-$EnabledRewards = Donations::get_enabled_rewards($UserID);
-$ProfileRewards = Donations::get_profile_rewards($UserID);
+$EnabledRewards = $donorMan->enabledRewards($UserID);
+$ProfileRewards = $donorMan->profileRewards($UserID);
 $FA_Key = null;
 
-if (check_perms('users_mod')) { // Person viewing is a staff member
+if (check_perms('users_mod')) {
+    // Person viewing is staff
     $DB->prepared_query('
         SELECT
-            um.Username,
-            um.Email,
-            ula.last_access,
-            um.IP,
-            p.Level AS Class,
-            uls.Uploaded,
-            uls.Downloaded,
-            coalesce(ub.points, 0) as BonusPoints,
-            um.RequiredRatio,
-            um.Title,
-            um.torrent_pass,
-            um.Enabled,
-            um.Paranoia,
-            um.Invites,
-            um.can_leech,
-            um.Visible,
-            i.JoinDate,
-            i.Info,
-            i.Avatar,
-            i.AdminComment,
-            i.Donor,
-            i.Artist,
-            i.Warned,
-            i.SupportFor,
-            i.RestrictedForums,
-            i.PermittedForums,
-            i.Inviter,
-            inviter.Username,
-            COUNT(posts.id) AS ForumPosts,
-            i.RatioWatchEnds,
-            i.RatioWatchDownload,
-            i.DisableAvatar,
-            i.DisableInvites,
-            i.DisablePosting,
-            i.DisablePoints,
-            i.DisableForums,
-            i.DisableTagging,
-            i.DisableUpload,
-            i.DisableWiki,
-            i.DisablePM,
-            i.DisableIRC,
-            i.DisableRequests,
-            um.FLTokens, /* TODO: read from user_flt in next phase */
-            um.2FA_Key,
-            SHA1(i.AdminComment),
-            i.InfoTitle,
-            la.Type AS LockedAccount,
+            um.Username, um.Email, ula.last_access, um.IP, p.Level AS Class, uls.Uploaded, uls.Downloaded,
+            coalesce(ub.points, 0) as BonusPoints, um.RequiredRatio, um.Title, um.torrent_pass, um.Enabled, um.Paranoia,
+            um.Invites, um.can_leech, um.Visible, i.JoinDate, i.Info, i.Avatar, i.AdminComment, i.Donor,
+            i.Artist, i.Warned, i.SupportFor, i.RestrictedForums, i.PermittedForums, i.Inviter,
+            inviter.Username, COUNT(posts.id) AS ForumPosts, i.RatioWatchEnds, i.RatioWatchDownload, i.DisableAvatar,
+            i.DisableInvites, i.DisablePosting, i.DisablePoints, i.DisableForums, i.DisableTagging,
+            i.DisableUpload, i.DisableWiki, i.DisablePM, i.DisableIRC, i.DisableRequests, uf.tokens AS FLTokens,
+            um.2FA_Key, SHA1(i.AdminComment), i.InfoTitle, la.Type AS LockedAccount,
             CASE WHEN uhafl.UserID IS NULL THEN 1 ELSE 0 END AS AcceptFL,
             CASE WHEN uhaud.UserID IS NULL THEN 0 ELSE 1 END AS UnlimitedDownload
         FROM users_main AS um
         LEFT JOIN user_last_access AS ula ON (ula.user_id = um.ID)
         INNER JOIN users_leech_stats AS uls ON (uls.UserID = um.ID)
         INNER JOIN users_info AS i ON (i.UserID = um.ID)
+        INNER JOIN user_flt AS uf ON (uf.user_id = um.ID)
         LEFT JOIN user_bonus AS ub ON (ub.user_id = um.ID)
         LEFT JOIN users_main AS inviter ON (i.Inviter = inviter.ID)
         LEFT JOIN permissions AS p ON (p.ID = um.PermissionID)
         LEFT JOIN forums_posts AS posts ON (posts.AuthorID = um.ID)
         LEFT JOIN locked_accounts AS la ON (la.UserID = um.ID)
-        LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
-        LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = ?)
-        LEFT JOIN user_has_attr AS uhaud ON (uhaud.UserID = um.ID)
-        LEFT JOIN user_attr as uaud ON (uaud.ID = uhaud.UserAttrID AND uaud.Name = ?)
+        LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID AND uhafl.UserAttrID = (SELECT ID FROM user_attr WHERE Name = ?))
+        LEFT JOIN user_has_attr AS uhaud ON (uhaud.UserID = um.ID AND uhaud.UserAttrID = (SELECT ID FROM user_attr WHERE Name = ?))
         WHERE um.ID = ?
         GROUP BY AuthorID
         ', 'no-fl-gifts', 'unlimited-download', $UserID
     );
-
-    if (!$DB->has_results()) { // If user doesn't exist
-        header("Location: log.php?search=User+$UserID");
-    }
-
     list($Username, $Email, $LastAccess, $IP, $Class, $Uploaded, $Downloaded,
     $BonusPoints, $RequiredRatio, $CustomTitle, $torrent_pass, $Enabled, $Paranoia,
     $Invites, $DisableLeech, $Visible, $JoinDate, $Info, $Avatar, $AdminComment, $Donor,
@@ -123,63 +86,45 @@ if (check_perms('users_mod')) { // Person viewing is a staff member
     $InviterName, $ForumPosts, $RatioWatchEnds, $RatioWatchDownload, $DisableAvatar,
     $DisableInvites, $DisablePosting, $DisablePoints, $DisableForums, $DisableTagging,
     $DisableUpload, $DisableWiki, $DisablePM, $DisableIRC, $DisableRequests, $FLTokens,
-    $FA_Key, $CommentHash, $InfoTitle, $LockedAccount, $AcceptFL, $UnlimitedDownload)
+    $FA_Key, $CommentHash, $InfoTitle, $LockedAccount,
+    $AcceptFL, $UnlimitedDownload)
         = $DB->next_record(MYSQLI_NUM, [9, 12]);
-} else { // Person viewing is a normal user
+} else {
+    // Person viewing is a normal user
     $DB->prepared_query('
         SELECT
-            um.Username,
-            um.Email,
-            ula.last_access,
-            um.IP,
-            p.Level AS Class,
-            uls.Uploaded,
-            uls.Downloaded,
-            coalesce(ub.points, 0) as BonusPoints,
-            um.RequiredRatio,
-            um.Enabled,
-            um.Paranoia,
-            um.Invites,
-            um.Title,
-            um.torrent_pass,
-            um.can_leech,
-            i.JoinDate,
-            i.Info,
-            i.Avatar,
-            um.FLTokens,
-            i.Donor,
-            i.Warned,
-            COUNT(posts.id) AS ForumPosts,
-            i.Inviter,
-            i.DisableInvites,
-            inviter.username,
-            i.InfoTitle,
+            um.Username, um.Email, ula.last_access, um.IP, p.Level AS Class, uls.Uploaded, uls.Downloaded,
+            coalesce(ub.points, 0) as BonusPoints, um.RequiredRatio, um.Enabled, um.Paranoia, um.Invites, um.Title,
+            um.torrent_pass, um.can_leech, i.JoinDate, i.Info, i.Avatar, uf.tokens AS FLTokens, i.Donor, i.Warned,
+            COUNT(posts.id) AS ForumPosts, i.Inviter, i.DisableInvites, inviter.username, i.InfoTitle,
             CASE WHEN uhafl.UserID IS NULL THEN 1 ELSE 0 END AS AcceptFL
         FROM users_main AS um
         LEFT JOIN user_last_access AS ula ON (ula.user_id = um.ID)
         INNER JOIN users_leech_stats AS uls ON (uls.UserID = um.ID)
         INNER JOIN users_info AS i ON (i.UserID = um.ID)
+        INNER JOIN user_flt AS uf ON (uf.user_id = um.ID)
         LEFT JOIN user_bonus AS ub ON (ub.user_id = um.ID)
         LEFT JOIN permissions AS p ON (p.ID = um.PermissionID)
         LEFT JOIN users_main AS inviter ON (i.Inviter = inviter.ID)
         LEFT JOIN forums_posts AS posts ON (posts.AuthorID = um.ID)
-        LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
-        LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = ?)
+        LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID AND uhafl.UserAttrID = (SELECT ID FROM user_attr WHERE Name = ?))
         WHERE um.ID = ?
         GROUP BY AuthorID
         ', 'no-fl-gifts', $UserID
     );
-
-    if (!$DB->has_results()) { // If user doesn't exist
-        header("Location: log.php?search=User+$UserID");
-    }
-
     list($Username, $Email, $LastAccess, $IP, $Class, $Uploaded, $Downloaded,
     $BonusPoints, $RequiredRatio, $Enabled, $Paranoia, $Invites, $CustomTitle,
     $torrent_pass, $DisableLeech, $JoinDate, $Info, $Avatar, $FLTokens, $Donor, $Warned,
-    $ForumPosts, $InviterID, $DisableInvites, $InviterName, $InfoTitle, $AcceptFL)
+    $ForumPosts, $InviterID, $DisableInvites, $InviterName, $InfoTitle,
+    $AcceptFL)
         = $DB->next_record(MYSQLI_NUM, [10, 12]);
     $UnlimitedDownload = null;
+}
+if (!$Username) { // If user doesn't exist
+    header("Location: log.php?search=User+$UserID");
+}
+if ($Warned == '') {
+    $Warned = null; // Fuck Gazelle
 }
 
 $BonusPointsPerHour = $Bonus->userHourlyRate($UserID);
@@ -225,8 +170,9 @@ function check_paranoia_here($Setting) {
 }
 
 View::show_header($Username, "jquery.imagesloaded,jquery.wookmark,user,bbcode,requests,lastfm,comments,info_paster", "tiles");
-$User = new \Gazelle\User($DB, $Cache, $UserID);
-$User->forceCacheFlush($UserID == $LoggedUser['ID']);
+$User = new \Gazelle\User($UserID);
+$User->forceCacheFlush($OwnProfile);
+list($ClassRatio, $Buffer) = $User->buffer();
 
 ?>
 <div class="thin">
@@ -245,7 +191,7 @@ if (!$OwnProfile) {
 <?php
 }
 
-if (check_perms('users_edit_profiles', $Class) || $LoggedUser['ID'] == $UserID) {
+if (check_perms('users_edit_profiles', $Class) || $OwnProfile) {
 ?>
         <a href="user.php?action=edit&amp;userid=<?=$UserID?>" class="brackets">Settings</a>
 <?php
@@ -276,7 +222,7 @@ if (check_perms('users_mod')) {
         <a href="userhistory.php?action=token_history&amp;userid=<?=$UserID?>" class="brackets">FL tokens</a>
 <?php
 }
-if (check_perms('users_mod') || ($LoggedUser['ID'] == $UserID && check_perms('site_user_stats'))) {
+if (check_perms('users_mod') || ($OwnProfile && check_perms('site_user_stats'))) {
 ?>
         <a href="user.php?action=stats&amp;userid=<?=$UserID?>" class="brackets">Stats</a>
 <?php
@@ -368,6 +314,21 @@ if ($Enabled == 1 && $AcceptFL && (count($FL_Items) || isset($FL_OTHER_tokens)))
 ?>
                 <li class="tooltip<?=($Override === 2 ? ' paranoia_override' : '')?>" title="<?=Format::get_size($Uploaded, 5)?>">Uploaded: <?=Format::get_size($Uploaded)?></li>
 <?php
+        if ($OwnProfile || check_perms('users_mod')) {
+            $recovered = $DB->scalar("
+                SELECT final FROM users_buffer_log WHERE opsid = ?
+                ", $UserID
+            );
+            if ($recovered) {
+?>
+                <li class="tooltip" title="<?= "Recovered from previous site: " . Format::get_size($recovered, 5)?>">Recovered: <?=Format::get_size($recovered)?></li>
+<?php
+            } elseif (check_perms('users_mod')) {
+?>
+                <li class="tooltip paranoia_override">Recovered: no record</li>
+<?php
+            }
+        }
     }
     if (($Override = check_paranoia_here('downloaded'))) {
 ?>
@@ -376,7 +337,7 @@ if ($Enabled == 1 && $AcceptFL && (count($FL_Items) || isset($FL_OTHER_tokens)))
     }
     if (($Override = (check_paranoia_here('uploaded') && check_paranoia_here('downloaded')))) {
 ?>
-                <li class="tooltip<?=($Override === 2 ? ' paranoia_override' : '')?>" title="<?=Format::get_size($Uploaded - $Downloaded, 5)?>">Buffer: <?=Format::get_size($Uploaded - $Downloaded)?></li>
+                <li class="tooltip<?=($Override === 2 ? ' paranoia_override' : '')?>" title="<?=Format::get_size($Buffer, 5)?>">Buffer: <?=Format::get_size($Buffer)?></li>
 <?php
     }
     if (($Override = check_paranoia_here('ratio'))) {
@@ -387,6 +348,11 @@ if ($Enabled == 1 && $AcceptFL && (count($FL_Items) || isset($FL_OTHER_tokens)))
     if (($Override = check_paranoia_here('requiredratio')) && isset($RequiredRatio)) {
 ?>
                 <li <?=($Override === 2 ? 'class="paranoia_override"' : '')?>>Required Ratio: <span class="tooltip" title="<?=number_format((double)$RequiredRatio, 5)?>"><?=number_format((double)$RequiredRatio, 2)?></span></li>
+<?php
+    }
+    if ($Override = check_paranoia_here('requiredratio')) {
+?>
+                <li <?=($Override === 2 ? 'class="paranoia_override"' : '')?>>Required Class Ratio: <span class="tooltip" title="<?=number_format((double)$ClassRatio, 5)?>"><?=number_format((double)$ClassRatio, 2)?></span></li>
 <?php
     }
     if (($Override = check_paranoia_here('bonuspoints')) && isset($BonusPoints)) {
@@ -410,13 +376,68 @@ if ($Enabled == 1 && $AcceptFL && (count($FL_Items) || isset($FL_OTHER_tokens)))
                 <li <?=($Override === 2 ? 'class="paranoia_override"' : '')?>><a href="userhistory.php?action=token_history&amp;userid=<?=$UserID?>">Tokens</a>: <?=number_format($FLTokens)?></li>
 <?php
     }
-    if (($OwnProfile || check_perms('users_mod')) && $Warned != '0000-00-00 00:00:00') {
+    if (($OwnProfile || check_perms('users_mod')) && !is_null($Warned)) {
 ?>
                 <li <?=($Override === 2 ? 'class="paranoia_override"' : '')?>>Warning expires in: <?=time_diff((date('Y-m-d H:i', strtotime($Warned))))?></li>
 <?php    } ?>
             </ul>
         </div>
 <?php
+    if ($OwnProfile || check_perms('users_mod', $Class)) {
+        $nextClass = $User->nextClass();
+        if ($nextClass) {
+?>
+        <div class="box box_info box_userinfo_nextclass">
+            <div class="head colhead_dark"><a href="wiki.php?action=article&amp;name=userclasses">Next Class</a></div>
+            <ul class="stats nobullet">
+                <li>Class: <?=$nextClass['Class']?></li>
+<?php
+            foreach ($nextClass['Requirements'] as $key => $req) {
+                $current = $req[0];
+                $goal = $req[1];
+                $type = $req[2];
+                if ($goal === 0) {
+                    continue;
+                }
+
+                switch ($type) {
+                case 'time':
+                    $percent = (time() - strtotime($current)) / $goal;
+                    $current = Gazelle\Util\Time::timeDiff($current, 2, true, false, false, true);
+                    $goal = $goal / 7 / 24 / 60 / 60;
+                    $goal = "$goal week" . ($goal > 1 ? 's' : '');
+                    break;
+                case 'float':
+                    if ($current === '∞') {
+                        $percent = 1;
+                    } else {
+                        $percent = $current / $goal;
+                        $current = round($current, 2);
+                    }
+                    break;
+                case 'int':
+                    $percent = $current === '∞' ? 1 : $current / $goal;
+                    break;
+                case 'bytes':
+                    $percent = $current / $goal;
+                    $current = Format::get_size($current);
+                    $goal = Format::get_size($goal);
+                    break;
+                }
+
+                $percent = sprintf('<span class="tooltip %s" title="%s">%s</span>',
+                    Format::get_ratio_color($percent),
+                    round($percent * 100, 2) . '%',
+                    round(min(1.0, $percent) * 100, 0) . '%'
+                );
+ ?>
+                <li><?=$key?>: <?=$current?> / <?=$goal?> (<?=$percent?>)</li>
+<?php } ?>
+            </ul>
+        </div>
+<?php
+        }
+      }
 // Last.fm statistics and comparability
 $LastFMUsername = LastFM::get_lastfm_username($UserID);
 if ($LastFMUsername)  {
@@ -435,17 +456,8 @@ if (check_paranoia_here('requestsvoted_count') || check_paranoia_here('requestsv
     $RequestsVoted = $TotalSpent = $RequestsCreated = $RequestsCreatedSpent = 0;
 }
 
-if (check_paranoia_here('uploads+')) {
-    $Uploads = $User->uploadCount();
-} else {
-    $Uploads = 0;
-}
-
-if (check_paranoia_here('artistsadded')) {
-    $ArtistsAdded = $User->artistsAdded();
-} else {
-    $ArtistsAdded = 0;
-}
+$Uploads = check_paranoia_here('uploads+') ? $User->uploadCount() : 0;
+$ArtistsAdded = check_paranoia_here('artistsadded') ? $User->artistsAdded() : 0;
 
 //Do the ranks
 $UploadedRank = UserRank::get_rank('uploaded', $Uploaded);
@@ -464,7 +476,6 @@ if ($Downloaded == 0) {
     $Ratio = round($Uploaded / $Downloaded, 2);
 }
 $OverallRank = UserRank::overall_score($UploadedRank, $DownloadedRank, $UploadsRank, $RequestRank, $PostRank, $BountyRank, $ArtistsRank, $Ratio);
-
 ?>
         <div class="box box_info box_userinfo_percentile">
             <div class="head colhead_dark">Percentile Rankings (hover for values)</div>
@@ -598,19 +609,11 @@ if (Applicant::user_is_applicant($UserID) && (check_perms('admin_manage_applican
                 <li>Roles applied for: <a href="/apply.php?action=view" class="brackets">View</a></li>
 <?php
 }
-
-if (!isset($SupportFor)) {
-    $SupportFor = $User->supportFor();
-}
-if ($Override = check_perms('users_mod') || $OwnProfile || !empty($SupportFor)) {
+if ($OwnProfile || check_perms('users_mod') || isset($LoggedUser['ExtraClasses'][FLS_TEAM])) {
 ?>
-                <li<?=(($Override === 2 || $SupportFor) ? ' class="paranoia_override"' : '')?>>Clients: <?=
+                <li<?= check_perms('users_mod') ? ' class="paranoia_override"' : '' ?>>Torrent clients: <?=
                     implode('; ', $User->clients()) ?></li>
-<?php
-}
 
-if ($OwnProfile || check_perms('users_mod')) {
-?>
     <li>Password age: <?= $User->passwordAge() ?></li>
 <?php }
 if ($OwnProfile || check_perms('users_override_paranoia', $Class)) { ?>
@@ -619,17 +622,19 @@ if ($OwnProfile || check_perms('users_override_paranoia', $Class)) { ?>
             </ul>
         </div>
 <?php
-include(__DIR__.'/community_stats.php');
+if (check_paranoia_here('snatched')) {
+    echo G::$Twig->render('user/tag-snatch.twig', [
+        'id'   => $UserID,
+        'list' => $User->tagSnatchCounts(),
+    ]);
+}
+require(__DIR__.'/community_stats.php');
 DonationsView::render_donor_stats($UserID);
 ?>
     </div>
     <div class="main_column">
 <?php
-if (isset($RatioWatchEnds)
-    && $RatioWatchEnds != '0000-00-00 00:00:00'
-    && (time() < strtotime($RatioWatchEnds))
-    && ($Downloaded * $RequiredRatio) > $Uploaded
-) {
+if (time() < strtotime($RatioWatchEnds) && ($Downloaded * $RequiredRatio) > $Uploaded) {
 ?>
         <div class="box">
             <div class="head">Ratio watch</div>
@@ -657,47 +662,21 @@ if (!$Info) {
 DonationsView::render_profile_rewards($EnabledRewards, $ProfileRewards);
 
 if (check_paranoia_here('snatched')) {
-    $RecentSnatches = $User->recentSnatches();
-    if (count($RecentSnatches)) {
-?>
-    <table class="layout recent" id="recent_snatches" cellpadding="0" cellspacing="0" border="0">
-        <tr class="colhead">
-            <td colspan="5">Recent Snatches</td>
-        </tr>
-        <tr>
-<?php        foreach ($RecentSnatches as $recent) { ?>
-            <td>
-                <a href="torrents.php?id=<?= $recent['ID'] ?>">
-                    <img class="tooltip" title="<?= $recent['Name'] ?>" alt="<?= $recent['Name'] ?>" src="<?= ImageTools::process($recent['WikiImage'], true) ?>" width="107" />
-                </a>
-            </td>
-<?php        } ?>
-        </tr>
-    </table>
-<?php
-    }
+    echo G::$Twig->render('user/recent.twig', [
+        'id'     => $UserID,
+        'recent' => $User->recentSnatches(),
+        'title'  => 'Snatches',
+        'type'   => 'snatched',
+    ]);
 }
 
 if (check_paranoia_here('uploads')) {
-    $RecentUploads = $User->recentUploads();
-    if (count($RecentUploads)) {
-?>
-    <table class="layout recent" id="recent_uploads" cellpadding="0" cellspacing="0" border="0">
-        <tr class="colhead">
-            <td colspan="5">Recent Uploads</td>
-        </tr>
-        <tr>
-<?php        foreach ($RecentUploads as $recent) { ?>
-            <td>
-                <a href="torrents.php?id=<?= $recent['ID'] ?>">
-                    <img class="tooltip" title="<?= $recent['Name'] ?>" alt="<?= $recent['Name'] ?>" src="<?= ImageTools::process($recent['WikiImage'], true) ?>" width="107" />
-                </a>
-            </td>
-<?php        } ?>
-        </tr>
-    </table>
-<?php
-    }
+    echo G::$Twig->render('user/recent.twig', [
+        'id'     => $UserID,
+        'recent' => $User->recentUploads(),
+        'title'  => 'Uploads',
+        'type'   => 'uploaded',
+    ]);
 }
 
 $Collages = $User->personalCollages();
@@ -751,12 +730,12 @@ foreach ($Collages as $CollageInfo) {
 
 // Linked accounts
 if (check_perms('users_mod')) {
-    include(__DIR__ . '/linkedfunctions.php');
+    require(__DIR__ . '/linkedfunctions.php');
     user_dupes_table($UserID);
 }
 
 if ((check_perms('users_view_invites')) && $Invited > 0) {
-    include(__DIR__  . '/../../classes/invite_tree.class.php');
+    require(__DIR__  . '/../../classes/invite_tree.class.php');
     $Tree = new INVITE_TREE($UserID, ['visible' => false]);
 ?>
         <div class="box" id="invitetree_box">
@@ -770,8 +749,8 @@ if ((check_perms('users_view_invites')) && $Invited > 0) {
 <?php
 }
 
-if (check_perms('users_mod')) {
-    DonationsView::render_donation_history(Donations::get_donation_history($UserID));
+if (check_perms('users_give_donor')) {
+    DonationsView::render_donation_history($donorMan->history($UserID));
 }
 
 // Requests
@@ -922,8 +901,7 @@ if (check_perms('users_mod', $Class) || $IsFLS) {
             } else {
                 $Resolver = '(unresolved)';
             }
-
-            ?>
+?>
                 <tr>
                     <td><a href="staffpm.php?action=viewconv&amp;id=<?=$ID?>"><?=display_str($Subject)?></a></td>
                     <td><?=time_diff($Date, 2, true)?></td>
@@ -939,7 +917,7 @@ if (check_perms('users_mod', $Class) || $IsFLS) {
 }
 
 // Displays a table of forum warnings viewable only to Forum Moderators
-if ($LoggedUser['Class'] == 650 && check_perms('users_warn', $Class)) {
+if ($LoggedUser['Class'] == 800 && check_perms('users_warn', $Class)) {
     $ForumWarnings = $User->forumWarning();
     if ($ForumWarnings) {
 ?>
@@ -952,7 +930,8 @@ if ($LoggedUser['Class'] == 650 && check_perms('users_warn', $Class)) {
 <?php
     }
 }
-if (check_perms('users_mod', $Class)) { ?>
+
+if (check_perms('users_mod') || $Classes[$LoggedUser['PermissionID']]['Name'] == 'Forum Moderator') { ?>
         <form class="manage_form" name="user" id="form" action="user.php" method="post">
         <input type="hidden" name="action" value="moderate" />
         <input type="hidden" name="userid" value="<?=$UserID?>" />
@@ -975,26 +954,24 @@ if (check_perms('users_mod', $Class)) { ?>
             </div>
         </div>
 
-        <table class="layout" id="user_info_box">
-            <tr class="colhead">
-                <td colspan="2">
-                    User Information
-                </td>
-            </tr>
-<?php    if (check_perms('users_edit_usernames', $Class)) { ?>
-            <tr>
-                <td class="label">Username:</td>
-                <td><input type="text" size="20" name="Username" value="<?=display_str($Username)?>" /></td>
-            </tr>
+<table class="layout" id="user_info_box">
+    <tr class="colhead">
+        <td colspan="2">
+            User Information
+        </td>
+    </tr>
+
 <?php
+    if (check_perms('users_edit_usernames', $Class)) {
+        echo G::$Twig->render('user/edit-username.twig', [
+            'username' => $Username,
+        ]);
     }
+
     if (check_perms('users_edit_titles')) {
-?>
-            <tr>
-                <td class="label">Custom title:</td>
-                <td><input type="text" class="wide_input_text" name="Title" value="<?=display_str($CustomTitle)?>" /></td>
-            </tr>
-<?php
+        echo G::$Twig->render('user/edit-title.twig', [
+            'title' => $CustomTitle,
+        ]);
     }
 
     if (check_perms('users_promote_below', $Class) || check_perms('users_promote_to', $Class - 1)) {
@@ -1008,7 +985,7 @@ if (check_perms('users_mod', $Class)) { ?>
             if ($CurClass['Secondary']) {
                 continue;
             }
-            elseif ($LoggedUser['ID'] != $UserID && !check_perms('users_promote_to', $Class-1) && $CurClass['Level'] == $LoggedUser['EffectiveClass']) {
+            elseif (!$OwnProfile && !check_perms('users_promote_to', $Class-1) && $CurClass['Level'] == $LoggedUser['EffectiveClass']) {
                 break;
             }
             elseif ($CurClass['Level'] > $LoggedUser['EffectiveClass']) {
@@ -1028,381 +1005,120 @@ if (check_perms('users_mod', $Class)) { ?>
 <?php
     }
 
-    if (check_perms('users_give_donor')) {
-?>
-            <tr>
-                <td class="label">Donor:</td>
-                <td><input type="checkbox" name="Donor"<?php if ($Donor == 1) { ?> checked="checked"<?php } ?> /></td>
-            </tr>
-<?php
+    if (check_perms('users_promote_below') || check_perms('users_promote_to')) {
+        echo G::$Twig->render('user/edit-permission.twig', [
+            'permission' => $User->permissionList(),
+        ]);
     }
-    if (check_perms('users_promote_below') || check_perms('users_promote_to')) { ?>
-        <tr>
-            <td class="label">Secondary classes:</td>
-            <td>
-<?php
-        $DB->prepared_query('
-            SELECT p.ID, p.Name, l.UserID
-            FROM permissions AS p
-            LEFT JOIN users_levels AS l ON (l.PermissionID = p.ID AND l.UserID = ?)
-            WHERE p.Secondary = 1
-            ORDER BY p.Name
-            ', $UserID
-        );
-        $i = 0;
-        while (list($PermID, $PermName, $IsSet) = $DB->next_record()) {
-            $i++;
-?>
-                <input type="checkbox" id="perm_<?=$PermID?>" name="secondary_classes[]" value="<?=$PermID?>"<?php if ($IsSet) { ?> checked="checked"<?php } ?> />&nbsp;<label for="perm_<?=$PermID?>" style="margin-right: 10px;"><?=$PermName?></label>
-<?php            if ($i % 3 == 0) {
-                echo "\t\t\t\t<br />\n";
-            }
-        } ?>
-            </td>
-        </tr>
-<?php }
 
-    if (check_perms('users_make_invisible')) { ?>
-            <tr>
-                <td class="label">Visible in peer lists:</td>
-                <td><input type="checkbox" name="Visible"<?php if ($Visible == 1) { ?> checked="checked"<?php } ?> /></td>
-            </tr>
-<?php }
+    if (check_perms('users_make_invisible')) {
+        echo G::$Twig->render('user/edit-peer-visibility.twig', [
+            'is_visible' => $Visible == 1,
+        ]);
+    }
 
-    if (check_perms('admin_rate_limit_manage')) { ?>
-            <tr id="comm_unlimited_download">
-                <td class="label tooltip" title="If checked, user is allowed to download unlimited torrent files.">Unlimited Torrent Downloads</td>
-                <td><input type="checkbox" name="unlimitedDownload" id="unlimitedDownload"<?= $UnlimitedDownload ? ' checked="checked"' : ''?> /></td>
-            </tr>
-<?php }
+    if (check_perms('admin_rate_limit_manage')) {
+        echo G::$Twig->render('user/edit-rate-limit.twig', [
+            'unlimited' => $UnlimitedDownload,
+        ]);
+    }
 
-    if (check_perms('users_edit_ratio', $Class) || (check_perms('users_edit_own_ratio') && $UserID == $LoggedUser['ID'])) {
-?>
-            <tr>
-                <td class="label tooltip" title="Upload amount in bytes. Also accepts e.g. +20GB or -35.6364MB on the end.">Uploaded:</td>
-                <td>
-                    <input type="hidden" name="OldUploaded" value="<?=$Uploaded?>" />
-                    <input type="text" size="20" name="Uploaded" value="<?=$Uploaded?>" />
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="Download amount in bytes. Also accepts e.g. +20GB or -35.6364MB on the end.">Downloaded:</td>
-                <td>
-                    <input type="hidden" name="OldDownloaded" value="<?=$Downloaded?>" />
-                    <input type="text" size="20" name="Downloaded" value="<?=$Downloaded?>" />
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="Bonus Points.">Bonus Points:</td>
-                <td>
-                    <input type="hidden" name="OldBonusPoints" value="<?=$BonusPoints?>" />
-                    <input type="text" size="20" name="BonusPoints" value="<?=$BonusPoints?>" />
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="Enter a username.">Merge stats <strong>from:</strong></td>
-                <td>
-                    <input type="text" size="40" name="MergeStatsFrom" />
-                </td>
-            </tr>
-<?php
+    if (check_perms('users_edit_ratio', $Class) || (check_perms('users_edit_own_ratio') && $OwnProfile)) {
+        echo G::$Twig->render('user/edit-buffer.twig', [
+            'up'    => $Uploaded,
+            'down'  => $Downloaded,
+            'bonus' => $BonusPoints,
+        ]);
     }
 
     if (check_perms('users_edit_invites')) {
-?>
-            <tr>
-                <td class="label tooltip" title="Number of invites">Invites:</td>
-                <td><input type="text" size="5" name="Invites" value="<?=$Invites?>" /></td>
-            </tr>
-<?php
+        echo G::$Twig->render('user/edit-invite.twig', [
+            'amount' => $Invites,
+        ]);
     }
 
     if (check_perms('admin_manage_user_fls')) {
-?>
-            <tr>
-                <td class="label tooltip" title="Number of FL tokens">FL Tokens:</td>
-                <td><input type="text" size="5" name="FLTokens" value="<?=$FLTokens?>" /></td>
-            </tr>
-<?php
+        echo G::$Twig->render('user/edit-fltoken.twig', [
+            'amount' => $FLTokens,
+        ]);
     }
 
     if (check_perms('admin_manage_fls') || (check_perms('users_mod') && $OwnProfile)) {
-?>
-            <tr>
-                <td class="label tooltip" title="This is the message shown in the right-hand column on /staff.php">FLS/Staff remark:</td>
-                <td><input type="text" class="wide_input_text" name="SupportFor" value="<?=display_str($SupportFor)?>" /></td>
-            </tr>
-<?php
+        echo G::$Twig->render('user/edit-remark.twig', [
+            'remark' => $SupportFor,
+        ]);
     }
 
     if (check_perms('users_edit_reset_keys')) {
-?>
-            <tr>
-                <td class="label">Reset:</td>
-                <td>
-                    <input type="checkbox" name="ResetRatioWatch" id="ResetRatioWatch" /> <label for="ResetRatioWatch">Ratio watch</label> |
-                    <input type="checkbox" name="ResetPasskey" id="ResetPasskey" /> <label for="ResetPasskey">Passkey</label> |
-                    <input type="checkbox" name="ResetAuthkey" id="ResetAuthkey" /> <label for="ResetAuthkey">Authkey</label> |
-                    <input type="checkbox" name="ResetIPHistory" id="ResetIPHistory" /> <label for="ResetIPHistory">IP history</label> |
-                    <input type="checkbox" name="ResetEmailHistory" id="ResetEmailHistory" /> <label for="ResetEmailHistory">Email history</label>
-                    <br />
-                    <input type="checkbox" name="ResetSnatchList" id="ResetSnatchList" /> <label for="ResetSnatchList">Snatch list</label> |
-                    <input type="checkbox" name="ResetDownloadList" id="ResetDownloadList" /> <label for="ResetDownloadList">Download list</label>
-                </td>
-            </tr>
-<?php
+        echo G::$Twig->render('user/edit-reset.twig');
     }
 
     if (check_perms('users_edit_password')) {
+        echo G::$Twig->render('user/edit-password.twig', [
+            'key_2fa' => $FA_Key,
+            'user_id' => $UserID,
+        ]);
+    }
 ?>
-            <tr>
-                <td class="label">New password:</td>
-                <td>
-                    <input type="text" size="30" id="change_password" name="ChangePassword" />
-                    <button type="button" id="random_password">Generate</button>
-                </td>
-            </tr>
-
-            <tr>
-                <td class="label">Two-factor Authentication:</td>
-                <td>
-<?php      if ($FA_Key) { ?>
-                    <a href="user.php?action=2fa&page=user&do=disable&userid=<?= $UserID ?>">Click here to disable</a>
-<?php      } else { ?>
-                    Currently Disabled
-<?php      } ?>
-                </td>
-            </tr>
-
-<?php    } ?>
-        </table>
-
-<?php    if (check_perms('users_warn')) { ?>
-        <table class="layout" id="warn_user_box">
-            <tr class="colhead">
-                <td colspan="2">
-                    Warnings
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Warned:</td>
-                <td>
-                    <input type="checkbox" name="Warned"<?php if ($Warned != '0000-00-00 00:00:00') { ?> checked="checked"<?php } ?> />
-                </td>
-            </tr>
-<?php        if ($Warned == '0000-00-00 00:00:00') { /* user is not warned */ ?>
-            <tr>
-                <td class="label">Expiration:</td>
-                <td>
-                    <select name="WarnLength">
-                        <option value="">---</option>
-                        <option value="1">1 week</option>
-                        <option value="2">2 weeks</option>
-                        <option value="4">4 weeks</option>
-                        <option value="8">8 weeks</option>
-                    </select>
-                </td>
-            </tr>
-<?php        } else { /* user is warned */ ?>
-            <tr>
-                <td class="label">Extension:</td>
-                <td>
-                    <select name="ExtendWarning" onchange="ToggleWarningAdjust(this);">
-                        <option>---</option>
-                        <option value="1">1 week</option>
-                        <option value="2">2 weeks</option>
-                        <option value="4">4 weeks</option>
-                        <option value="8">8 weeks</option>
-                    </select>
-                </td>
-            </tr>
-            <tr id="ReduceWarningTR">
-                <td class="label">Reduction:</td>
-                <td>
-                    <select name="ReduceWarning">
-                        <option>---</option>
-                        <option value="1">1 week</option>
-                        <option value="2">2 weeks</option>
-                        <option value="4">4 weeks</option>
-                        <option value="8">8 weeks</option>
-                    </select>
-                </td>
-            </tr>
-<?php        } ?>
-            <tr>
-                <td class="label tooltip" title="This message *will* be sent to the user in the warning PM!">Warning reason:</td>
-                <td>
-                    <input type="text" class="wide_input_text" name="WarnReason" />
-                </td>
-            </tr>
-<?php    } ?>
-        </table>
-<?php  if (check_perms('users_disable_any')) { ?>
-        <table class="layout">
-            <tr class="colhead">
-                <td colspan="2">
-                    Lock Account
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Lock Account:</td>
-                <td>
-                    <input type="checkbox" name="LockAccount" id="LockAccount" <?php if($LockedAccount) { ?> checked="checked" <?php } ?>/>
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Reason:</td>
-                <td>
-                    <select name="LockReason">
-                        <option value="---">---</option>
-                        <option value="<?=STAFF_LOCKED?>" <?php if ($LockedAccount == STAFF_LOCKED) { ?> selected <?php } ?>>Staff Lock</option>
-                    </select>
-                </td>
-            </tr>
-        </table>
-<?php  }  ?>
-        <table class="layout" id="user_privs_box">
-            <tr class="colhead">
-                <td colspan="2">
-                    User Privileges
-                </td>
-            </tr>
-<?php    if (check_perms('users_disable_posts') || check_perms('users_disable_any')) {
-        $Emails = $User->emailHistory();
-?>
-            <tr>
-                <td class="label">Disable:</td>
-                <td>
-                    <input type="checkbox" name="DisablePosting" id="DisablePosting"<?php if ($DisablePosting == 1) { ?> checked="checked"<?php } ?> /> <label for="DisablePosting">Posting</label>
-<?php        if (check_perms('users_disable_any')) { ?> |
-                    <input type="checkbox" name="DisableAvatar" id="DisableAvatar"<?php if ($DisableAvatar == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableAvatar">Avatar</label> |
-                    <input type="checkbox" name="DisableForums" id="DisableForums"<?php if ($DisableForums == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableForums">Forums</label> |
-                    <input type="checkbox" name="DisableIRC" id="DisableIRC"<?php if ($DisableIRC == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableIRC">IRC</label> |
-                    <input type="checkbox" name="DisablePM" id="DisablePM"<?php if ($DisablePM == 1) { ?> checked="checked"<?php } ?> /> <label for="DisablePM">PM</label> |
-                    <br /><br />
-
-                    <input type="checkbox" name="DisableLeech" id="DisableLeech"<?php if ($DisableLeech == 0) { ?> checked="checked"<?php } ?> /> <label for="DisableLeech">Leech</label> |
-                    <input type="checkbox" name="DisableRequests" id="DisableRequests"<?php if ($DisableRequests == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableRequests">Requests</label> |
-                    <input type="checkbox" name="DisableUpload" id="DisableUpload"<?php if ($DisableUpload == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableUpload">Torrent upload</label> |
-                    <input type="checkbox" name="DisablePoints" id="DisablePoints"<?php if ($DisablePoints == 1) { ?> checked="checked"<?php } ?> /> <label for="DisablePoints">Bonus Points</label>
-                    <br /><br />
-
-                    <input type="checkbox" name="DisableTagging" id="DisableTagging"<?php if ($DisableTagging == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableTagging" class="tooltip" title="This only disables a user's ability to delete tags.">Tagging</label> |
-                    <input type="checkbox" name="DisableWiki" id="DisableWiki"<?php if ($DisableWiki == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableWiki">Wiki</label>
-                    <br /><br />
-
-                    <input type="checkbox" name="DisableInvites" id="DisableInvites"<?php if ($DisableInvites == 1) { ?> checked="checked"<?php } ?> /> <label for="DisableInvites">Invites</label>
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Hacked:</td>
-                <td>
-                    <input type="checkbox" name="SendHackedMail" id="SendHackedMail" /> <label for="SendHackedMail">Send hacked account email</label> to
-                    <select name="HackedEmail">
-<?php
-            foreach ($Emails as $Email) {
-                list($Address, $IP) = $Email;
-?>
-                        <option value="<?=display_str($Address)?>"><?=display_str($Address)?> - <?=display_str($IP)?></option>
-<?php            } ?>
-                    </select>
-                </td>
-            </tr>
+</table>
 
 <?php
-        }
+    if (check_perms('users_disable_posts') || check_perms('users_disable_any')) {
+        echo G::$Twig->render('user/edit-privileges.twig', [
+            'email'          => $User->emailHistory(),
+            'is_unconfirmed' => $Enabled == '0',
+            'is_enabled'     => $Enabled == '1',
+            'is_disabled'    => $Enabled == '2',
+            'forum' => [
+                'restricted' => $RestrictedForums,
+                'permitted'  => $PermittedForums,
+            ],
+            'permission' => [
+                'disable_any' => check_perms('users_disable_any'),
+                'delete_user' => check_perms('users_delete_users'),
+            ],
+            'disable' => [
+                'avatar'  => $DisableAvatar,
+                'bonus'   => $DisablePoints,
+                'forum'   => $DisableForums,
+                'invite'  => $DisableInvites,
+                'irc'     => $DisableIRC,
+                'leech'   => $DisableLeech == 0,
+                'pm'      => $DisablePM,
+                'posting' => $DisablePosting,
+                'request' => $DisableRequests,
+                'tag'     => $DisableTagging,
+                'upload'  => $DisableUpload,
+                'wiki'    => $DisableWiki,
+            ],
+        ]);
+    }
+
+    if (check_perms('users_give_donor')) {
+        DonationsView::render_mod_donations($UserID);
+    }
+
+    if (check_perms('users_warn')) {
+        echo G::$Twig->render('user/edit-warn.twig', [
+            'is_warned' => !is_null($Warned),
+            'until'     => !is_null($Warned) ? date('Y-m-d H:i', strtotime($Warned)) : 'n/a',
+        ]);
     }
 
     if (check_perms('users_disable_any')) {
-?>
-            <tr>
-                <td class="label">Account:</td>
-                <td>
-                    <select name="UserStatus">
-                        <option value="0"<?php if ($Enabled == '0') { ?> selected="selected"<?php } ?>>Unconfirmed</option>
-                        <option value="1"<?php if ($Enabled == '1') { ?> selected="selected"<?php } ?>>Enabled</option>
-                        <option value="2"<?php if ($Enabled == '2') { ?> selected="selected"<?php } ?>>Disabled</option>
-<?php        if (check_perms('users_delete_users')) { ?>
-                        <optgroup label="-- WARNING --">
-                            <option value="delete">Delete account</option>
-                        </optgroup>
-<?php        } ?>
-                    </select>
-                </td>
-            </tr>
-            <tr>
-                <td class="label">User reason:</td>
-                <td>
-                    <input type="text" class="wide_input_text" name="UserReason" />
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="Enter a comma-delimited list of forum IDs.">Restricted forums:</td>
-                <td>
-                    <input type="text" class="wide_input_text" name="RestrictedForums" value="<?=display_str($RestrictedForums)?>" />
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="Enter a comma-delimited list of forum IDs.">Extra forums:</td>
-                <td>
-                    <input type="text" class="wide_input_text" name="PermittedForums" value="<?=display_str($PermittedForums)?>" />
-                </td>
-            </tr>
-
-<?php    } ?>
-        </table>
-<?php    if (check_perms('users_logout')) { ?>
-        <table class="layout" id="session_box">
-            <tr class="colhead">
-                <td colspan="2">
-                    Session
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Reset session:</td>
-                <td><input type="checkbox" name="ResetSession" id="ResetSession" /></td>
-            </tr>
-            <tr>
-                <td class="label">Log out:</td>
-                <td><input type="checkbox" name="LogOut" id="LogOut" /></td>
-            </tr>
-        </table>
-<?php
+        echo G::$Twig->render('user/edit-lock.twig', [
+            'is_locked'  => $LockedAccount,
+            'staff_lock' => STAFF_LOCKED,
+            'can_logout' => check_perms('users_logout'),
+        ]);
     }
-    if (check_perms('users_mod')) {
-        DonationsView::render_mod_donations($UserID);
-    }
-?>
-        <table class="layout" id="submit_box">
-            <tr class="colhead">
-                <td colspan="2">
-                    Submit
-                </td>
-            </tr>
-            <tr>
-                <td class="label tooltip" title="This message will be entered into staff notes only.">Reason:</td>
-                <td>
-                    <textarea rows="1" cols="35" class="wide_input_text" name="Reason" id="Reason" onkeyup="resize('Reason');"></textarea>
-                </td>
-            </tr>
-            <tr>
-                <td class="label">Paste user stats:</td>
-                <td>
-                    <button type="button" id="paster">Paste</button>
-                </td>
-            </tr>
 
-            <tr>
-                <td align="right" colspan="2">
-                    <input type="submit" value="Save changes" />
-                </td>
-            </tr>
-        </table>
+    echo G::$Twig->render('user/edit-submit.twig');
+?>
         </form>
-<?php
-}
-?>
+<?php } /* check_perms('users_mod') */ ?>
     </div>
 </div>
 <?php
+
 View::show_footer();

@@ -134,7 +134,7 @@ class AutoEnable {
 
                 if ($Status == self::APPROVED) {
                     // Generate token
-                    $Token = Users::make_secret();
+                    $Token = randomString();
                     G::$DB->prepared_query("
                         UPDATE users_enable_requests
                         SET Token = ?
@@ -146,7 +146,7 @@ class AutoEnable {
                 $Subject = "Your enable request for " . SITE_NAME . " has been ";
                 $Subject .= ($Status == self::APPROVED) ? 'approved' : 'denied';
 
-                Misc::send_email($Email, $Subject, G::$Twig->render("emails/".template, $context), 'noreply');
+                Misc::send_email($Email, $Subject, G::$Twig->render("emails/".$template, $context), 'noreply');
             }
         } else {
             foreach ($Results as $Result) {

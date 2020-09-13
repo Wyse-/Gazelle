@@ -5,8 +5,17 @@ if (!isset($TorrentID) || empty($TorrentID)) {
     error(403);
 }
 $LogScore = isset($_GET['logscore']) ? intval($_GET['logscore']) : 0;
-$DB->query("SELECT LogID, Log, Details, Score, `Checksum`, Adjusted, AdjustedBy, AdjustedScore, AdjustedChecksum, AdjustmentReason, AdjustmentDetails FROM torrents_logs WHERE TorrentID = '$TorrentID'");
-if($DB->record_count() > 0) {
+$DB->prepared_query('
+    SELECT LogID, Details, Score, `Checksum`, Adjusted, AdjustedBy, AdjustedScore, AdjustedChecksum, AdjustmentReason, AdjustmentDetails, Log
+    FROM torrents_logs
+    WHERE TorrentID = ?
+    ', $TorrentID
+);
+$ripFiler = new \Gazelle\File\RipLog;
+
+if(!$DB->record_count()) {
+    echo '';
+} else {
     ob_start();
     echo '<table><tr class=\'colhead_dark\' style=\'font-weight: bold;\'><td>This torrent has '.$DB->record_count().' '.($DB->record_count() > 1 ? 'logs' : 'log').' with a total score of '.$LogScore.' (out of 100):</td></tr>';
 
@@ -22,8 +31,8 @@ if($DB->record_count() > 0) {
             echo "<a class='brackets' href='torrents.php?action=editlog&torrentid={$TorrentID}&logid={$Log['LogID']}'>Edit Log</a>&nbsp;";
             echo "<a class='brackets' onclick=\"return confirm('Are you sure you want to deleted this log? There is NO undo!');\" href='torrents.php?action=deletelog&torrentid={$TorrentID}&logid={$Log['LogID']}'>Delete Log</a>&nbsp;";
         }
-        if (file_exists(SERVER_ROOT . "/logs/{$TorrentID}_{$Log['LogID']}.log")) {
-            echo "<a class='brackets' href='logs/{$TorrentID}_{$Log['LogID']}.log' target='_blank'>View Raw Log</a>";
+        if ($ripFiler->exists([$TorrentID, $Log['LogID']])) {
+            echo "<a class='brackets' href='view.php?type=riplog&id={$TorrentID}.{$Log['LogID']}' target='_blank'>View Raw Log</a>";
         }
 
         if (($Log['Adjusted'] === '0' && $Log['Checksum'] === '0') || ($Log['Adjusted'] === '1' && $Log['AdjustedChecksum'] === '0')) {
@@ -71,6 +80,4 @@ HTML;
     }
     echo '</table>';
     echo ob_get_clean();
-} else {
-    echo '';
 }

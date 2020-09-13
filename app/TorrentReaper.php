@@ -2,15 +2,7 @@
 
 namespace Gazelle;
 
-class TorrentReaper
-{
-    protected $db;
-    protected $cache;
-
-    public function __construct(\DB_MYSQL $db, \CACHE $cache) {
-        $this->db = $db;
-        $this->cache = $cache;
-    }
+class TorrentReaper extends Base {
 
     public function deleteDeadTorrents(bool $unseeded, bool $neverSeeded) {
         if (!$unseeded && !$neverSeeded) {
@@ -43,14 +35,14 @@ class TorrentReaper
             WHERE $criteria
             LIMIT 8000
         ");
-        $torrents = $this->db->to_array('ID', MYSQLI_NUM, false);
+        $torrents = $this->db->to_array(0, MYSQLI_NUM, false);
 
         $logEntries = $deleteNotes = [];
 
         $i = 0;
         foreach ($torrents as $torrent) {
             list($id, $groupID, $name, $format, $encoding, $userID, $media, $infoHash) = $torrent;
-            $artistName = \Artists::display_artists(Artists::get_artist($groupID), false, false, false);
+            $artistName = \Artists::display_artists(\Artists::get_artist($groupID), false, false, false);
             if ($artistName) {
                 $name = "$artistName - $name";
             }
@@ -66,7 +58,7 @@ class TorrentReaper
                 $deleteNotes[$userID] = ['Count' => 0, 'Msg' => ''];
             }
 
-            $deleteNotes[$userID]['Msg'] .= sprintf("\n[url=torrents.php?id=%s]%s[/url]", $groupID, $name);
+            $deleteNotes[$userID]['Msg'] .= sprintf("\n[url=%storrents.php?id=%s]%s[/url]", site_url(), $groupID, $name);
             $deleteNotes[$userID]['Count']++;
 
             ++$i;
@@ -74,18 +66,18 @@ class TorrentReaper
 
         foreach ($deleteNotes as $userID => $messageInfo) {
             $singular = (($messageInfo['Count'] == 1) ? true : false);
-            Misc::send_pm($userID, 0, $messageInfo['Count'].' of your torrents '.($singular ? 'has' : 'have').' been deleted for inactivity', ($singular ? 'One' : 'Some').' of your uploads '.($singular ? 'has' : 'have').' been deleted for being unseeded. Since '.($singular ? 'it' : 'they').' didn\'t break any rules (we hope), please feel free to re-upload '.($singular ? 'it' : 'them').".\n\nThe following torrent".($singular ? ' was' : 's were').' deleted:'.$messageInfo['Msg']);
+            \Misc::send_pm($userID, 0, $messageInfo['Count'].' of your torrents '.($singular ? 'has' : 'have').' been deleted for inactivity', ($singular ? 'One' : 'Some').' of your uploads '.($singular ? 'has' : 'have').' been deleted for being unseeded. Since '.($singular ? 'it' : 'they').' didn\'t break any rules (we hope), please feel free to re-upload '.($singular ? 'it' : 'them').".\n\nThe following torrent".($singular ? ' was' : 's were').' deleted:'.$messageInfo['Msg']);
         }
         unset($deleteNotes);
 
         if (count($logEntries) > 0) {
             $chunks = array_chunk($logEntries, 100);
             foreach ($chunks as $messages) {
-                $placeholders = implode(',', array_fill(0, count($messages), '(?, now())'));
                 $this->db->prepared_query("
                     INSERT INTO log (Message, Time)
-                    VALUES $placeholders
-                ", ...$messages);
+                    VALUES " . placeholders($messages, '(?, now())')
+                    , ...$messages
+                );
             }
         }
 
@@ -96,11 +88,11 @@ class TorrentReaper
         $similarIDs = $this->db->collect('SimilarID');
 
         if ($similarIDs) {
-            $placeholders = implode(', ', array_fill(0, count($similarIDs), '(?)'));
             $this->db->prepared_query("
                 DELETE FROM artists_similar
-                WHERE SimilarID IN ($placeholders)
+                WHERE SimilarID IN (" . placeholders($similarIDs, '(?)') . ")
             ", ...$similarIDs);
+            $placeholders = placeholders($similarIDs);
             $this->db->prepared_query("
                 DELETE FROM artists_similar_scores
                 WHERE SimilarID IN ($placeholders)

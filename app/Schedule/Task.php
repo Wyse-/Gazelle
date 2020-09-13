@@ -4,9 +4,7 @@ namespace Gazelle\Schedule;
 
 use \Gazelle\Util\Irc;
 
-abstract class Task {
-    protected $db;
-    protected $cache;
+abstract class Task extends \Gazelle\Base {
     protected $taskId;
     protected $name;
     protected $isDebug;
@@ -16,9 +14,8 @@ abstract class Task {
     protected $events;
     protected $processed;
 
-    public function __construct(\DB_MYSQL $db, \CACHE $cache, int $taskId, string $name, bool $isDebug) {
-        $this->db = $db;
-        $this->cache = $cache;
+    public function __construct(int $taskId, string $name, bool $isDebug) {
+        parent::__construct();
         $this->taskId = $taskId;
         $this->name = $name;
         $this->isDebug = $isDebug;
@@ -52,7 +49,6 @@ abstract class Task {
 
         echo("DONE! (".number_format(microtime(true) - $this->startTime, 3).")\n");
 
-
         foreach ($this->events as $event) {
             echo(sprintf("%s [%s] (%d) %s\n", $event->timestamp, $event->severity, $event->reference, $event->event));
             $this->db->prepared_query('
@@ -70,7 +66,7 @@ abstract class Task {
             ', $this->taskId);
             $this->cache->delete_value(Scheduler::CACHE_TASKS);
 
-            Irc::sendChannel('Task '.$this->name.' is no longer sane '.site_url().'tools.php?action=periodic&amp;mode=detail&amp;id='.$this->taskId, LAB_CHAN);
+            Irc::sendChannel('Task '.$this->name.' is no longer sane '.site_url().'tools.php?action=periodic&mode=detail&id='.$this->taskId, LAB_CHAN);
             // todo: send notifications to appropriate users
         } else if ($errorCount == 0 && !$sane) {
             $this->db->prepared_query('

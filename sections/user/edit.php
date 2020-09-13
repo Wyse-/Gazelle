@@ -1,11 +1,13 @@
 <?php
 
+use \Gazelle\Manager\Notification;
+
 $UserID = $_REQUEST['userid'];
 if (!is_number($UserID)) {
     error(404);
 }
 
-$User = new \Gazelle\User($DB, $Cache, $UserID);
+$User = new \Gazelle\User($UserID);
 
 $DB->prepared_query('
     SELECT
@@ -73,12 +75,13 @@ function disabled($Disabled) {
 $SiteOptions = unserialize_array($SiteOptions);
 $SiteOptions = array_merge(Users::default_site_options(), $SiteOptions);
 
-View::show_header("$Username &gt; Settings", 'user,jquery-ui,release_sort,password_validate,validate,cssgallery,preview_paranoia,bbcode,user_settings,donor_titles');
+View::show_header("$Username &rsaquo; Settings", 'user,jquery-ui,release_sort,password_validate,validate,cssgallery,preview_paranoia,bbcode,user_settings,donor_titles');
 
-$EnabledReward = Donations::get_enabled_rewards($UserID);
-$Rewards = Donations::get_rewards($UserID);
-$ProfileRewards = Donations::get_profile_rewards($UserID);
-$DonorTitles = Donations::get_titles($UserID);
+$donorMan = new Gazelle\Manager\Donation;
+$EnabledReward  = $donorMan->enabledRewards($UserID);
+$Rewards        = $donorMan->rewards($UserID);
+$ProfileRewards = $donorMan->profileRewards($UserID);
+$DonorTitles    = $donorMan->titles($UserID);
 
 $NavItems = Users::get_nav_items();
 $UserNavItems = array_filter(array_map('trim', explode(',', $UserNavItems)));
@@ -93,7 +96,7 @@ echo $Val->GenerateJS('userform');
 ?>
 <div class="thin">
     <div class="header">
-        <h2><?=Users::format_username($UserID, false, false, false)?> &gt; Settings</h2>
+        <h2><?=Users::format_username($UserID, false, false, false)?> &rsaquo; Settings</h2>
     </div>
     <form class="edit_form" name="user" id="userform" action="" method="post" autocomplete="off">
     <div class="sidebar settings_sidebar">
@@ -152,7 +155,7 @@ echo $Val->GenerateJS('userform');
                 <td>
                     <select name="stylesheet" id="stylesheet">
 <?php
-    $StylesheetsManager = new \Gazelle\Stylesheet($DB, $Cache);
+    $StylesheetsManager = new \Gazelle\Stylesheet;
     $Stylesheets = $StylesheetsManager->list();
 
     foreach ($Stylesheets as $Style) { ?>
@@ -510,7 +513,10 @@ echo $Val->GenerateJS('userform');
                     <label for="unseededalerts">Enable unseeded torrent alerts</label>
                 </td>
             </tr>
-            <?php NotificationsManagerView::render_settings(NotificationsManager::get_settings($UserID)); ?>
+<?php
+            $notification = new Notification($UserID);
+            NotificationsManagerView::render_settings($notification->settings());
+?>
         </table>
         <table cellpadding="6" cellspacing="1" border="0" width="100%" class="layout border user_options" id="personal_settings">
             <tr class="colhead_dark">
@@ -688,7 +694,7 @@ echo $Val->GenerateJS('userform');
             <tr id="para_donations_tr">
                 <td class="label"><strong>Donations</strong></td>
                 <td>
-                    <input type="checkbox" id="p_donor_stats" name="p_donor_stats" onchange="AlterParanoia();"<?= Donations::is_visible($UserID) ? ' checked="checked"' : ''?> />
+                    <input type="checkbox" id="p_donor_stats" name="p_donor_stats" onchange="AlterParanoia();"<?= $donorMan->isVisible($UserID) ? ' checked="checked"' : ''?> />
                     <label for="p_donor_stats">Show donor stats</label>
                     <input type="checkbox" id="p_donor_heart" name="p_donor_heart" onchange="AlterParanoia();"<?=checked(!in_array('hide_donor_heart', $Paranoia))?> />
                     <label for="p_donor_heart">Show donor heart</label>

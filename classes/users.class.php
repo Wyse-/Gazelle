@@ -12,7 +12,7 @@ class Users {
         if (!$Classes || !$ClassLevels) {
             $QueryID = G::$DB->get_query_id();
             G::$DB->query('
-                SELECT ID, Name, Level, Secondary
+                SELECT ID, Name, Level, Secondary, badge
                 FROM permissions
                 ORDER BY Level');
             $Classes = G::$DB->to_array('ID');
@@ -55,20 +55,20 @@ class Users {
      *
      * @param $UserID int   The UserID to get info for
      * @return array with the following keys:
-     *    int    ID
-     *    string    Username
-     *    int    PermissionID
-     *    array    Paranoia - $Paranoia array sent to paranoia.class
-     *    boolean    Artist
-     *    boolean    Donor
-     *    string    Warned - When their warning expires in international time format
-     *    string    Avatar - URL
-     *    boolean    Enabled
-     *    string    Title
-     *    string    CatchupTime - When they last caught up on forums
-     *    boolean    Visible - If false, they don't show up on peer lists
-     *    array ExtraClasses - Secondary classes.
-     *    int EffectiveClass - the highest level of their main and secondary classes
+     *    int     ID
+     *    string  Username
+     *    int     PermissionID
+     *    array   Paranoia - $Paranoia array sent to paranoia.class
+     *    boolean Artist
+     *    boolean Donor
+     *    string  Warned - When their warning expires in international time format
+     *    string  Avatar - URL
+     *    boolean Enabled
+     *    string  Title
+     *    string  CatchupTime - When they last caught up on forums
+     *    boolean Visible - If false, they don't show up on peer lists
+     *    array   ExtraClasses - Secondary classes.
+     *    int     EffectiveClass - the highest level of their main and secondary classes
      */
     public static function user_info($UserID) {
         global $Classes, $SSL;
@@ -77,14 +77,14 @@ class Users {
         if (empty($UserInfo) || empty($UserInfo['ID']) || !isset($UserInfo['Paranoia']) || empty($UserInfo['Class'])) {
             $OldQueryID = G::$DB->get_query_id();
 
-            G::$DB->query("
+            G::$DB->prepared_query("
                 SELECT
                     m.ID,
                     m.Username,
                     m.PermissionID,
                     m.Paranoia,
                     i.Artist,
-                    i.Donor,
+                    (donor.UserID IS NOT NULL) AS Donor,
                     i.Warned,
                     i.Avatar,
                     m.Enabled,
@@ -94,11 +94,16 @@ class Users {
                     la.Type AS LockedAccount,
                     GROUP_CONCAT(ul.PermissionID SEPARATOR ',') AS Levels
                 FROM users_main AS m
-                    INNER JOIN users_info AS i ON i.UserID = m.ID
-                    LEFT JOIN locked_accounts AS la ON la.UserID = m.ID
-                    LEFT JOIN users_levels AS ul ON ul.UserID = m.ID
-                WHERE m.ID = '$UserID'
-                GROUP BY m.ID");
+                INNER JOIN users_info AS i ON (i.UserID = m.ID)
+                LEFT JOIN locked_accounts AS la ON (la.UserID = m.ID)
+                LEFT JOIN users_levels AS ul ON (ul.UserID = m.ID)
+                LEFT JOIN users_levels AS donor ON (donor.UserID = m.ID
+                    AND donor.PermissionID = (SELECT ID FROM permissions WHERE Name = 'Donor' LIMIT 1)
+                )
+                WHERE m.ID = ?
+                GROUP BY m.ID
+                ", $UserID
+            );
 
             if (!G::$DB->has_results()) { // Deleted user, maybe?
                 $UserInfo = [
@@ -108,7 +113,7 @@ class Users {
                         'Paranoia' => [],
                         'Artist' => false,
                         'Donor' => false,
-                        'Warned' => '0000-00-00 00:00:00',
+                        'Warned' => null,
                         'Avatar' => '',
                         'Enabled' => 0,
                         'Title' => '',
@@ -146,7 +151,7 @@ class Users {
             G::$DB->set_query_id($OldQueryID);
         }
         if (strtotime($UserInfo['Warned']) < time()) {
-            $UserInfo['Warned'] = '0000-00-00 00:00:00';
+            $UserInfo['Warned'] = null;
             G::$Cache->cache_value("user_info_$UserID", $UserInfo, 2592000);
         }
 
@@ -198,17 +203,21 @@ class Users {
                     i.RestrictedForums,
                     i.PermittedForums,
                     i.NavItems,
-                    m.FLTokens,
+                    uf.tokens AS FLTokens,
                     m.PermissionID,
                     CASE WHEN uha.UserID IS NULL THEN 1 ELSE 0 END AS AcceptFL
                 FROM users_main AS m
                 INNER JOIN users_info AS i ON (i.UserID = m.ID)
+                INNER JOIN user_flt AS uf ON (uf.user_id = m.ID)
                 LEFT JOIN user_has_attr AS uha ON (uha.UserID = m.ID)
                 LEFT JOIN user_attr as ua ON (ua.ID = uha.UserAttrID AND ua.Name = ?)
                 WHERE m.ID = ?
                 ', 'no-fl-gifts', $UserID
             );
             $HeavyInfo = G::$DB->next_record(MYSQLI_ASSOC, ['CustomPermissions', 'SiteOptions']);
+            if ($HeavyInfo['RatioWatchEnds'] == '') {
+                $HeavyInfo['RatioWatchEnds'] = null;
+            }
 
             $HeavyInfo['CustomPermissions'] = unserialize_array($HeavyInfo['CustomPermissions']);
 
@@ -469,18 +478,6 @@ class Users {
     }
 
     /**
-     * Generate a random string
-     *
-     * @param  int    $Length
-     * @return string random alphanumeric string
-     */
-    public static function make_secret($Length = 32) {
-        $NumBytes = (int) round($Length / 2);
-        $Secret = bin2hex(openssl_random_pseudo_bytes($NumBytes));
-        return substr($Secret, 0, $Length);
-    }
-
-    /**
      * Verify a password against a password hash
      *
      * @param string $Password password
@@ -529,21 +526,6 @@ class Users {
     public static function format_username($UserID, $Badges = false, $IsWarned = true, $IsEnabled = true, $Class = false, $Title = false, $IsDonorForum = false) {
         global $Classes;
 
-        // This array is a hack that should be made less retarded, but whatevs
-        //                           PermID => ShortForm
-        $SecondaryClasses = [
-            '23' => 'FLS', // First Line Support
-            '30' => 'IN', // Interviewer
-            '31' => 'TC', // Torrent Celebrity
-            '32' => 'D', // Designer
-            '33' => 'ST', // Security Team
-            '37' => 'AR', // Archive Team
-            '36' => 'AT', // Alpha Team
-            '48' => 'BT', // Beta TEam
-            '38' => 'CT', // Charlie Team
-            '39' => 'DT', // Delta Team
-         ];
-
         if ($UserID == 0) {
             return 'System';
         }
@@ -566,8 +548,9 @@ class Users {
         }
         $ShowDonorIcon = (!in_array('hide_donor_heart', $Paranoia) || $OverrideParanoia);
 
+        $donorMan = new \Gazelle\Manager\Donation;
         if ($IsDonorForum) {
-            list($Prefix, $Suffix, $HasComma) = Donations::get_titles($UserID);
+            list($Prefix, $Suffix, $HasComma) = $donorMan->titles($UserID);
             $Username = "$Prefix $Username" . ($HasComma ? ', ' : ' ') . "$Suffix ";
         }
 
@@ -577,7 +560,7 @@ class Users {
             $Str .= "<a href=\"user.php?id=$UserID\">$Username</a>";
         }
         if ($Badges) {
-            $DonorRank = Donations::get_rank($UserID);
+            $DonorRank = $donorMan->rank($UserID);
             if ($DonorRank == 0 && $UserInfo['Donor'] == 1) {
                 $DonorRank = 1;
             }
@@ -586,9 +569,9 @@ class Users {
                 $IconImage = 'donor.png';
                 $IconText = 'Donor';
                 $DonorHeart = $DonorRank;
-                $SpecialRank = Donations::get_special_rank($UserID);
-                $EnabledRewards = Donations::get_enabled_rewards($UserID);
-                $DonorRewards = Donations::get_rewards($UserID);
+                $SpecialRank = $donorMan->specialRank($UserID);
+                $EnabledRewards = $donorMan->enabledRewards($UserID);
+                $DonorRewards = $donorMan->rewards($UserID);
                 if ($EnabledRewards['HasDonorIconMouseOverText'] && !empty($DonorRewards['IconMouseOverText'])) {
                     $IconText = display_str($DonorRewards['IconMouseOverText']);
                 }
@@ -615,16 +598,18 @@ class Users {
             }
         }
 
-        $Str .= ($IsWarned && $UserInfo['Warned'] != '0000-00-00 00:00:00') ? '<a href="wiki.php?action=article&amp;name=warnings"'
+        $Str .= ($IsWarned && $UserInfo['Warned']) ? '<a href="wiki.php?action=article&amp;name=warnings"'
                     . '><img src="'.STATIC_SERVER.'common/symbols/warned.png" alt="Warned" title="Warned'
-                    . (G::$LoggedUser['ID'] === $UserID ? ' - Expires ' . date('Y-m-d H:i', strtotime($UserInfo['Warned'])) : '')
+                    . (G::$LoggedUser['ID'] == $UserID ? ' - Expires ' . date('Y-m-d H:i', strtotime($UserInfo['Warned'])) : '')
                     . '" class="tooltip" /></a>' : '';
         $Str .= ($IsEnabled && $UserInfo['Enabled'] == 2) ? '<a href="rules.php"><img src="'.STATIC_SERVER.'common/symbols/disabled.png" alt="Banned" title="Disabled" class="tooltip" /></a>' : '';
 
         if ($Badges) {
             $ClassesDisplay = [];
-            foreach (array_intersect_key($SecondaryClasses, $UserInfo['ExtraClasses']) as $PermID => $PermShort) {
-                $ClassesDisplay[] = '<span class="tooltip secondary_class" title="'.$Classes[$PermID]['Name'].'">'.$PermShort.'</span>';
+            foreach (array_keys($UserInfo['ExtraClasses']) as $PermID) {
+                if ($Classes[$PermID]['badge'] !== '') {
+                    $ClassesDisplay[] = '<span class="tooltip secondary_class" title="'.$Classes[$PermID]['Name'].'">'.$Classes[$PermID]['badge'].'</span>';
+                }
             }
             if (!empty($ClassesDisplay)) {
                 $Str .= '&nbsp;'.implode('&nbsp;', $ClassesDisplay);
@@ -711,10 +696,11 @@ class Users {
         $AvatarMouseOverText = '';
         $FirstAvatar = '';
         $SecondAvatar = '';
-        $EnabledRewards = Donations::get_enabled_rewards($UserID);
 
+        $donorMan = new \Gazelle\Manager\Donation;
+        $EnabledRewards = $donorMan->enabledRewards($UserID);
         if ($EnabledRewards['HasAvatarMouseOverText']) {
-            $Rewards = Donations::get_rewards($UserID);
+            $Rewards = $donorMan->rewards($UserID);
             $AvatarMouseOverText = $Rewards['AvatarMouseOverText'];
         }
         if (!empty($AvatarMouseOverText)) {
@@ -725,6 +711,7 @@ class Users {
         if ($EnabledRewards['HasSecondAvatar'] && !empty($Rewards['SecondAvatar'])) {
             $SecondAvatar = ImageTools::process($Rewards['SecondAvatar'], false, 'avatar2', $UserID);
         }
+
         $Attrs = "width=\"$Size\" $AvatarMouseOverText";
         // purpose of the switch is to set $FirstAvatar (URL)
         // case 1 is avatars disabled
@@ -846,7 +833,7 @@ class Users {
      */
     public static function resetPassword($UserID, $Username, $Email)
     {
-        $ResetKey = Users::make_secret();
+        $ResetKey = randomString();
         G::$DB->prepared_query("
             UPDATE users_info
             SET
@@ -872,8 +859,7 @@ class Users {
      */
     public static function removeCustomTitle($ID) {
         G::$DB->prepared_query("UPDATE users_main SET Title='' WHERE ID = ? ", $ID);
-        G::$Cache->delete_value("user_info_{$ID}");
-        G::$Cache->delete_value("user_stats_{$ID}");
+        G::$Cache->deleteMulti(["user_info_{$ID}", "user_stats_{$ID}"]);
     }
 
     /**
@@ -887,8 +873,7 @@ class Users {
         G::$DB->prepared_query("UPDATE users_main SET Title = ? WHERE ID = ?",
             $Title, $ID);
         if (G::$DB->affected_rows() == 1) {
-            G::$Cache->delete_value("user_info_{$ID}");
-            G::$Cache->delete_value("user_stats_{$ID}");
+            G::$Cache->deleteMulti(["user_info_{$ID}", "user_stats_{$ID}"]);
             return true;
         }
         return false;
@@ -933,75 +918,6 @@ class Users {
         G::$Cache->delete_value('stats_user_count');
     }
 
-    public static function get_promotion_criteria() {
-        $criteria = [];
-        $criteria[] = ['From' => USER,   'To' => MEMBER,         'MinUpload' => 10 * 1024 * 1024 * 1024,  'MinRatio' => 0.7,  'MinUploads' => 0,   'Weeks' => 1];
-        $criteria[] = ['From' => MEMBER, 'To' => POWER,          'MinUpload' => 25 * 1024 * 1024 * 1024,  'MinRatio' => 1.05, 'MinUploads' => 5,   'Weeks' => 2];
-        $criteria[] = ['From' => POWER,  'To' => ELITE,          'MinUpload' => 100 * 1024 * 1024 * 1024, 'MinRatio' => 1.05, 'MinUploads' => 50,  'Weeks' => 4];
-        $criteria[] = ['From' => ELITE,  'To' => TORRENT_MASTER, 'MinUpload' => 500 * 1024 * 1024 * 1024, 'MinRatio' => 1.05, 'MinUploads' => 500, 'Weeks' => 8];
-        $criteria[] = [
-            'From' => TORRENT_MASTER,
-            'To' => POWER_TM,
-            'MinUpload' => 500 * 1024 * 1024 * 1024,
-            'MinRatio' => 1.05,
-            'MinUploads' => 500,
-            'Weeks' => 8,
-            'Extra' => '
-                        (
-                            SELECT count(DISTINCT GroupID)
-                            FROM torrents
-                            WHERE UserID = users_main.ID
-                        ) >= 500'];
-        $criteria[] = [
-            'From' => POWER_TM,
-            'To' => ELITE_TM,
-            'MinUpload' => 500 * 1024 * 1024 * 1024,
-            'MinRatio' => 1.05,
-            'MinUploads' => 500,
-            'Weeks' => 8,
-            'Extra' => "
-                        (
-                            SELECT count(ID)
-                            FROM torrents
-                            WHERE ((LogScore = 100 AND Format = 'FLAC')
-                                OR (Media = 'Vinyl' AND Format = 'FLAC')
-                                OR (Media = 'WEB' AND Format = 'FLAC')
-                                OR (Media = 'DVD' AND Format = 'FLAC')
-                                OR (Media = 'Soundboard' AND Format = 'FLAC')
-                                OR (Media = 'Cassette' AND Format = 'FLAC')
-                                OR (Media = 'SACD' AND Format = 'FLAC')
-                                OR (Media = 'Blu-ray' AND Format = 'FLAC')
-                                OR (Media = 'DAT' AND Format = 'FLAC')
-                                )
-                                AND UserID = users_main.ID
-                        ) >= 500"];
-        $criteria[] = [
-            'From' => ELITE_TM,
-            'To' => ULTIMATE_TM,
-            'MinUpload' => 2 * 1024 * 1024 * 1024 * 1024,
-            'MinRatio' => 1.05,
-            'MinUploads' => 2000,
-            'Weeks' => 12,
-            'Extra' => sprintf("
-                        ((
-                            SELECT count(DISTINCT t.GroupID, t.RemasterYear, t.RemasterCatalogueNumber, t.RemasterRecordLabel, t.RemasterTitle, t.Media)
-                            FROM torrents t
-                            WHERE t.Format = 'FLAC'
-                                AND (t.LogScore = 100
-                                    OR t.Media IN ('Cassette', 'DAT')
-                                    OR (t.Media IN ('Vinyl', 'DVD', 'Soundboard', 'SACD', 'BD') AND t.Encoding = '24bit Lossless'))
-                                AND t.UserID = users_main.ID
-                        ) >= 2000 AND
-                        (
-                            SELECT uls.Uploaded + IFNULL(b.Bounty, 0) - IFNULL(ubl.final, 0)
-                            FROM users_leech_stats uls
-                            LEFT JOIN %s.users_buffer_log ubl ON (ubl.opsid = uls.UserID)
-                            WHERE uls.UserID = users_main.ID
-                        ) >= 2 * 1024 * 1024 * 1024 * 1024)", RECOVERY_DB)];
-
-        return $criteria;
-    }
-
     /**
      * toggle Accept FL token setting
      * If user accepts FL tokens and the refusal attribute is found, delete it.
@@ -1029,35 +945,6 @@ class Users {
                 INSERT INTO user_has_attr (UserID, UserAttrID)
                     SELECT ?, ID FROM user_attr WHERE Name = ?
                 ', $id, 'no-fl-gifts'
-            );
-        }
-    }
-
-    /**
-     * toggle Unlimited Download setting
-     */
-    public static function toggleUnlimitedDownload($id, $flag) {
-        G::$DB->prepared_query('
-            SELECT ua.ID
-            FROM user_has_attr uha
-            INNER JOIN user_attr ua ON (ua.ID = uha.UserAttrID)
-            WHERE uha.UserID = ?
-                AND ua.Name = ?
-            ', $id, 'unlimited-download'
-        );
-        $found = G::$DB->has_results();
-        if (!$flag && $found) {
-            list($attr_id) = G::$DB->next_record();
-            G::$DB->prepared_query('
-                DELETE FROM user_has_attr WHERE UserID = ? AND UserAttrID = ?
-                ', $id, $attr_id
-            );
-        }
-        elseif ($flag && !$found) {
-            G::$DB->prepared_query('
-                INSERT INTO user_has_attr (UserID, UserAttrID)
-                    SELECT ?, ID FROM user_attr WHERE Name = ?
-                ', $id, 'unlimited-download'
             );
         }
     }

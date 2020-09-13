@@ -103,20 +103,23 @@ if ($RequestCategoryID !== '0' && $TorrentCategoryID !== $RequestCategoryID) {
 $CategoryName = $CategoriesV2[$RequestCategoryID - 1];
 
 if ($Format === 'FLAC' && $LogCue && $Media === 'CD') {
-    if (strpos($LogCue, 'Log') !== false && !$HasLogDB) {
-        $Err[] = 'This request requires a log.';
-    }
+    if (strpos($LogCue, 'Log') !== false) {
+        if (!$HasLogDB) {
+            $Err[] = 'This request requires a log.';
+        } else {
+            if (preg_match('/(\d+)%/', $LogCue, $Matches) && $LogScore < $Matches[1]) {
+                $Err[] = 'This torrent\'s log score is too low.';
+            }
 
-    if (strpos($LogCue, '%') !== false) {
-        preg_match('/\d+/', $LogCue, $Matches);
-        if ((int)$LogScore < (int)$Matches[0]) {
-            $Err[] = 'This torrent\'s log score is too low.';
+            if ($Checksum && !$LogChecksum) {
+                $Err[] = 'The ripping log for this torrent does not have a valid checksum.';
+            }
         }
     }
-}
 
-if ($Checksum && !$LogChecksum) {
-    $Err[] = 'The ripping log for this torrent does not have a valid checksum.';
+    if (strpos($LogCue, 'Cue') !== false && !$HasCue) {
+        $Err[] = 'This request requires a cue file.';
+    }
 }
 
 if ($BitrateList === 'Other') {

@@ -1,4 +1,7 @@
 <?php
+
+use \Gazelle\Manager\Notification;
+
 //******************************************************************************//
 //--------------- Vote on a request --------------------------------------------//
 //This page is ajax!
@@ -73,7 +76,9 @@ $UserIDs = [];
 while (list($UserID) = $DB->next_record()) {
     $UserIDs[] = $UserID;
 }
-NotificationsManager::notify_users($UserIDs, NotificationsManager::REQUESTALERTS, Format::get_size($Amount) . " of bounty has been added to a request you've voted on!", "requests.php?action=view&id=" . $RequestID);
+$notification = new Notification;
+$notification->notifyUsers($UserIDs, Notification::REQUESTALERTS, Format::get_size($Amount)
+    . " of bounty has been added to a request you've voted on!", "requests.php?action=view&id=" . $RequestID);
 
 $Cache->delete_value("request_$RequestID");
 $Cache->delete_value("request_votes_$RequestID");

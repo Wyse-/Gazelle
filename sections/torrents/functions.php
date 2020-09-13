@@ -1,5 +1,5 @@
 <?php
-function get_group_info($GroupID, $Return = true, $RevisionID = 0, $PersonalProperties = true, $ApiCall = false) {
+function get_group_info($GroupID, $RevisionID = 0, $PersonalProperties = true, $ApiCall = false) {
     global $Cache, $DB;
     if (!$RevisionID) {
         $TorrentCache = $Cache->get_value("torrents_details_$GroupID");
@@ -169,92 +169,22 @@ function get_group_info($GroupID, $Return = true, $RevisionID = 0, $PersonalProp
         }
     }
 
-    if ($Return) {
-        return [$TorrentDetails, $TorrentList];
-    }
+    return [$TorrentDetails, $TorrentList];
 }
 
-function get_torrent_info($TorrentID, $Return = true, $RevisionID = 0, $PersonalProperties = true, $ApiCall = false) {
-    $GroupID = (int)torrentid_to_groupid($TorrentID);
-    $GroupInfo = get_group_info($GroupID, $Return, $RevisionID, $PersonalProperties, $ApiCall);
-    if ($GroupInfo) {
-        foreach ($GroupInfo[1] as &$Torrent) {
-            //Remove unneeded entries
-            if ($Torrent['ID'] != $TorrentID) {
-                unset($GroupInfo[1][$Torrent['ID']]);
-            }
-            if ($Return) {
-                return $GroupInfo;
-            }
+function get_torrent_info($TorrentID, $RevisionID = 0, $PersonalProperties = true, $ApiCall = false) {
+    $torMan = new \Gazelle\Manager\Torrent;
+    $GroupInfo = get_group_info($torMan->idToGroupId($TorrentID), $RevisionID, $PersonalProperties, $ApiCall);
+    if (!$GroupInfo) {
+        return null;
+    }
+    foreach ($GroupInfo[1] as &$Torrent) {
+        //Remove unneeded entries
+        if ($Torrent['ID'] != $TorrentID) {
+            unset($GroupInfo[1][$Torrent['ID']]);
         }
-    } else {
-        if ($Return) {
-            return null;
-        }
+        return $GroupInfo;
     }
-}
-
-//Check if a givin string can be validated as a torrenthash
-function is_valid_torrenthash($Str) {
-    //6C19FF4C 6C1DD265 3B25832C 0F6228B2 52D743D5
-    $Str = str_replace(' ', '', $Str);
-    if (preg_match('/^[0-9a-fA-F]{40}$/', $Str))
-        return $Str;
-    return false;
-}
-
-//Functionality for the API to resolve input into other data.
-
-function torrenthash_to_torrentid($Str) {
-    global $Cache, $DB;
-    $DB->prepared_query("
-        SELECT ID
-        FROM torrents
-        WHERE info_hash = UNHEX(?)", $Str);
-    $TorrentID = (int)array_pop($DB->next_record(MYSQLI_ASSOC));
-    if ($TorrentID) {
-        return $TorrentID;
-    }
-    return null;
-}
-
-function torrenthash_to_groupid($Str) {
-    global $Cache, $DB;
-    $DB->prepared_query("
-        SELECT GroupID
-        FROM torrents
-        WHERE info_hash = UNHEX(?)", $Str);
-    $GroupID = (int)array_pop($DB->next_record(MYSQLI_ASSOC));
-    if ($GroupID) {
-        return $GroupID;
-    }
-    return null;
-}
-
-function torrentid_to_groupid($TorrentID) {
-    global $Cache, $DB;
-    $DB->prepared_query("
-        SELECT GroupID
-        FROM torrents
-        WHERE ID = ?", $TorrentID);
-    $GroupID = (int)array_pop($DB->next_record(MYSQLI_ASSOC));
-    if ($GroupID) {
-        return $GroupID;
-    }
-    return null;
-}
-
-//After adjusting / deleting logs, recalculate the score for the torrent.
-function set_torrent_logscore($TorrentID) {
-    global $DB;
-    $DB->query("
-        UPDATE torrents
-        SET LogScore = (
-                SELECT FLOOR(AVG(Score))
-                FROM torrents_logs
-                WHERE TorrentID = $TorrentID
-                )
-        WHERE ID = $TorrentID");
 }
 
 function get_group_requests($GroupID) {

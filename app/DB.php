@@ -2,18 +2,7 @@
 
 namespace Gazelle;
 
-class DB
-{
-    /** @var \DB_MYSQL */
-    private $db;
-
-    /** @var \CACHE */
-    private $cache;
-
-    public function __construct(\DB_MYSQL $db, \CACHE $cache) {
-        $this->db = $db;
-        $this->cache = $cache;
-    }
+class DB extends Base {
 
     /**
      * Soft delete a row from a table <t> by inserting it into deleted_<t> and then delete from <t>
@@ -75,5 +64,18 @@ class DB
         $sql = "DELETE FROM $table WHERE $conditionList";
         $this->db->prepared_query($sql, ...$argList);
         return [true, "rows deleted: " . $this->db->affected_rows()];
+    }
+
+    /**
+     * Calculate page and SQL limit
+     * @param int $pageSize records per page
+     * @param int $page current page or a falsey value to fetch from $_REQUEST
+     */
+    public static function pageLimit(int $pageSize, int $page = 0) {
+        if (!$page) {
+            $page = max(1, (int)($_REQUEST['page'] ?? 0));
+        }
+
+        return [$page, $pageSize, $pageSize * ($page - 1)];
     }
 }

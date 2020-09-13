@@ -2,14 +2,8 @@
 
 namespace Gazelle\Top10;
 
-class Donor {
-    /** @var \DB_MYSQL */
-    private $db;
-
-    public function __construct (\DB_MYSQL $db) {
-        $this->db = $db;
-    }
-
+class Donor extends \Gazelle\Base {
+    // TODO: move this method to Manager\Donation and kill this class
     public function getTopDonors($limit) {
         return $this->db->prepared_query('
             SELECT UserID, TotalRank, Rank, SpecialRank, DonationTime, Hidden

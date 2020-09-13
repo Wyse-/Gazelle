@@ -8,7 +8,8 @@ if ($ConvID = (int)$_GET['id']) {
         WHERE ID = $ConvID");
     list($Subject, $UserID, $Level, $AssignedToUser, $Unread, $Status) = $DB->next_record();
 
-    $LevelCap = 1000;
+    $LevelCap = Permissions::get_level_cap();
+    $UserLevel = $LoggedUser['EffectiveClass'];
 
 
     $PMLevel = $Level;
@@ -44,31 +45,55 @@ if ($ConvID = (int)$_GET['id']) {
     <div class="header">
         <h2>Staff PM - <?=display_str($Subject)?></h2>
         <div class="linkbox">
-
 <?php
+$Sections = [];
 if ($IsStaff) {
-?>
-    <a href="staffpm.php" class="brackets">View your unanswered</a>
-<?php
+    $Sections[''] = 'Your unanswered';
 }
 if ($IsFLS) {
-?>
-<a href="staffpm.php?view=unanswered" class="brackets">View all unanswered</a>
-<a href="staffpm.php?view=open" class="brackets">View unresolved</a>
-<a href="staffpm.php?view=resolved" class="brackets">View resolved</a>
-<?php
+    $Sections['unanswered'] = "All unanswered";
+    $Sections['open']       = "Unresolved";
+    $Sections['resolved']   = 'Resolved';
 }
+
+foreach ($Sections as $Section => $Text) {
+    if ($Section == 'unanswered') {
+        $AllUnansweredStaffPMCount = $DB->scalar("
+            SELECT count(*)
+            FROM staff_pm_conversations
+            WHERE (least(?, Level) <= ? OR AssignedToUser = ?)
+                AND Status IN ('Unanswered')
+        ", $LevelCap, $UserLevel, $LoggedUser['ID']);
+        $Text .= " ($AllUnansweredStaffPMCount)";
+    }
+    if ($Section == 'open') {
+        $UnresolvedStaffPMCount = $DB->scalar("
+            SELECT count(*)
+            FROM staff_pm_conversations
+            WHERE (least(?, Level) <= ? OR AssignedToUser = ?)
+                AND Status IN ('Open', 'Unanswered')
+        ", $LevelCap, $UserLevel, $LoggedUser['ID']);
+        $Text .= " ($UnresolvedStaffPMCount)";
+    }
+
+    $Section = ($Section) ? "?view=$Section" : '';
+
+    ?><a href="staffpm.php<?= $Section ?>" class="brackets"><?= $Text ?></a>&nbsp;<?php
+}
+
 if (check_perms('admin_staffpm_stats')) { ?>
-    <a href="staffpm.php?action=scoreboard&amp;view=user" class="brackets">View user scoreboard</a>
-    <a href="staffpm.php?action=scoreboard&amp;view=staff" class="brackets">View staff scoreboard</a>
+            <a href="staffpm.php?action=scoreboard&amp;view=user" class="brackets">View user scoreboard</a>
+            <a href="staffpm.php?action=scoreboard&amp;view=staff" class="brackets">View staff scoreboard</a>
 <?php
 }
-if (!$IsStaff && !$IsFLS) {
-?>
+if ($IsFLS && !$IsStaff) { ?>
+            <span class="tooltip" title="This is the inbox where replies to Staff PMs you have sent are."><a href="staffpm.php?action=userinbox" class="brackets">Personal Staff Inbox</a></span>
+<?php
+}
+if (!$IsStaff && !$IsFLS) { ?>
     <a href="staffpm.php" class="brackets">Back to inbox</a>
 <?php
-}
-?>        </div>
+} ?>        </div>
     </div>
     <br />
     <br />
@@ -243,41 +268,10 @@ if (!$IsStaff && !$IsFLS) {
 <?php   } ?>
                     <input type="button" id="previewbtn" value="Preview" class="hidden button_preview_<?=$TextPrev->getID()?>" />
                     <input type="submit" value="Send message" />
-<?php
-    } else { ?>
+<?php } else { ?>
                     <input type="button" value="Unresolve" onclick="location.href='staffpm.php?action=unresolve&amp;id=<?=$ConvID?>';" />
-<?php
-    }
-    if (check_perms('users_give_donor')) { ?>
-                    <br />
-                    <input type="button" value="Make Donor" onclick="$('#make_donor_form').gtoggle(); return false;" />
-<?php
-    } ?>
+<?php } ?>
                 </form>
-<?php
-    if (check_perms('users_give_donor')) { ?>
-                <div id="make_donor_form" class="hidden">
-                    <form action="staffpm.php" method="post">
-                        <input type="hidden" name="action" value="make_donor" />
-                        <input type="hidden" name="auth" value="<?=$LoggedUser['AuthKey']?>" />
-                        <input type="hidden" name="id" value="<?=$ConvID?>" />
-                        <strong>Amount: </strong>
-                        <input type="text" name="donation_amount" onkeypress="return isNumberKey(event);" />
-                        <br />
-                        <strong>Reason: </strong>
-                        <input type="text" name="donation_reason" />
-                        <br />
-                        <select name="donation_source">
-                            <option value="Flattr">Flattr</option>
-                        </select>
-                        <select name="donation_currency">
-                            <option value="EUR">EUR</option>
-                        </select>
-                        <input type="submit" value="Submit" />
-                    </form>
-                </div>
-<?php
-    } ?>
             </div>
         </div>
     </div>

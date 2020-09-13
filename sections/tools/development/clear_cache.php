@@ -4,11 +4,7 @@ if (!check_perms('users_mod') || !check_perms('admin_clear_cache')) {
 }
 
 if (!empty($_GET['key'])) {
-    if ($_GET['submit'] == 'Multi') {
-        $Keys = array_map('trim', preg_split('/\s+/', $_GET['key']));
-    } else {
-        $Keys = [trim($_GET['key'])];
-    }
+    $Keys = preg_split('/\s+/', trim($_GET['key']));
 }
 
 if (isset($Keys) && $_GET['type'] == 'view') {
@@ -21,28 +17,30 @@ if (isset($Keys) && $_GET['type'] == 'view') {
     }
 }
 
-View::show_header('Clear a cache key');
+View::show_header('Cache key management');
 
 //Make sure the form was sent
 if (isset($_GET['cache'])) {
-    if ($_GET['cache'] === 'users') {
-        $DB->query("SELECT count(*) as count FROM users_main");
-        list($Count) = $DB->next_record();
-
-        for ($i = 1; $i <= $Count; $i++) {
-            $Cache->delete_value('user_stats_' . $i);
-            $Cache->delete_value('user_info_' . $i);
-            $Cache->delete_value('user_info_heavy_' . $i);
+    if ($_GET['cache'] === 'artists') {
+        $max = $DB->scalar("SELECT max(ArtistID) as count FROM artists_group");
+        for ($i = 1; $i <= $max; $i++) {
+            $Cache->deleteMulti(['artist_' . $i, 'artist_groups_' . $i]);
         }
-        echo "<div class='save_message'>{$Count} users' caches cleared!</div>";
+        echo "<div class='save_message'>All artist caches flushed.</div>";
     }
     elseif ($_GET['cache'] === 'torrent_groups') {
-        $DB->query("SELECT count(*) as count FROM torrents_group");
-        list($Count) = $DB->next_record();
-        for ($i = 1; $i <= $Count; $i++) {
-            $Cache->delete_value('torrent_group_' . $i);
-            $Cache->delete_value('groups_artists_' . $i);
+        $max = $DB->scalar("SELECT max(ID) as count FROM torrents_group");
+        for ($i = 1; $i <= $max; $i++) {
+            $Cache->deleteMulti(['torrent_group_' . $i, 'groups_artists_' . $i]);
         }
+        echo "<div class='save_message'>All torrent caches flushed.</div>";
+    }
+    elseif ($_GET['cache'] === 'users') {
+        $max = $DB->scalar("SELECT max(ID) as count FROM users_main");
+        for ($i = 1; $i <= $max; $i++) {
+            $Cache->deleteMulti(['inbox_new_' . $i, 'user_stats_' . $i, 'user_info_' . $i, 'user_info_heavy_' . $i, 'donor_info_' . $i]);
+        }
+        echo "<div class='save_message'>All user caches flushed.</div>";
     }
 }
 
@@ -56,13 +54,12 @@ if (isset($Keys) && $_GET['type'] == 'clear') {
             $Cache->delete_value($Key);
         }
     }
-    echo '<div class="save_message">Key(s) ' . implode(', ', array_map('display_str', $Keys)) . ' cleared!</div>';
+    echo '<div class="save_message">Key(s) ' . implode(', ', array_map('display_str', $Keys)) . ' flushed.</div>';
 }
-
-$MultiKeyTooltip = 'Enter cache keys delimited by any amount of whitespace.';
+$MultiKeyTooltip = 'Enter cache keys delimited by whitespace.';
 ?>
     <div class="header">
-        <h2>Clear a cache key</h2>
+        <h2>View or flush cache keys</h2>
     </div>
     <table class="layout" cellpadding="2" cellspacing="1" border="0" align="center">
         <tr>
@@ -72,49 +69,55 @@ $MultiKeyTooltip = 'Enter cache keys delimited by any amount of whitespace.';
                     <input type="hidden" name="action" value="clear_cache" />
                     <select name="type">
                         <option value="view">View</option>
-                        <option value="clear">Clear</option>
+                        <option value="clear">Flush</option>
                     </select>
-                    <input type="text" name="key" id="key" class="inputtext" value="<?=(isset($_GET['key']) && $_GET['submit'] != 'Multi' ? display_str($_GET['key']) : '')?>" />
-                    <input type="submit" name="submit" value="Single" class="submit" />
+                    <input type="text" name="key" id="key" class="inputtext" value="<?=(isset($_GET['key']) && ($_GET['submit'] ?? '') != 'Multi' ? display_str($_GET['key']) : '')?>" />
+                    <br /><input type="submit" name="submit" value="Single" class="submit" />
                 </form>
             </td>
         </tr>
         <tr class="tooltip" title="<?=$MultiKeyTooltip?>">
-            <td>Multi-key</td>
+            <td style="vertical-align: top;">Multi-key</td>
             <td>
                 <form class="manage_form" name="cache" method="get" action="">
                     <input type="hidden" name="action" value="clear_cache" />
-                    <select name="type">
+                    <select name="type" style="vertical-align: top;">
                         <option value="view">View</option>
-                        <option value="clear">Clear</option>
+                        <option value="clear">Flush</option>
                     </select>
-                    <textarea type="text" name="key" id="key" class="inputtext"><?=(isset($_GET['key']) && $_GET['submit'] == 'Multi' ? display_str($_GET['key']) : '')?></textarea>
-                    <input type="submit" name="submit" value="Multi" class="submit" />
+                    <textarea type="text" name="key" id="key" class="inputtext"><?=(isset($_GET['key']) && ($_GET['submit'] ?? '') == 'Multi' ? display_str($_GET['key']) : '')?></textarea>
+                    <br /><input type="submit" name="submit" value="Multi" class="submit" />
                 </form>
             </td>
         </tr>
         <tr>
-            <td rowspan="2">Clear Common Caches:</td>
-            <td><a href="tools.php?action=clear_cache&cache=users">Users</a> (clears out user_stats_*, user_info_*, and user_info_heavy_*)</td>
+            <td rowspan="3" style="vertical-align: top;">Flush application caches:</td>
+            <td><a href="tools.php?action=clear_cache&amp;cache=artists">Artists</a> (flushes artist_* and artist_groups_*)</td>
         </tr>
         <tr>
-            <td><a href="tools.php?action=clear_cache&cache=torrent_groups">Torrent Groups</a> (clears out torrent_group_* and groups_artists_*)</td>
+            <td><a href="tools.php?action=clear_cache&amp;cache=torrent_groups">Torrent Groups</a> (flushes torrent_group_* and groups_artists_*)</td>
+        </tr>
+        <tr>
+            <td><a href="tools.php?action=clear_cache&amp;cache=users">Users</a> (flushes donor_info_*, inbox_new_*, user_info_*, and user_info_heavy_*, user_stats_*)</td>
         </tr>
     </table>
-<?php
-if (isset($Keys) && $_GET['type'] == 'view') {
-    ?>
+
+<?php if (isset($Keys) && $_GET['type'] == 'view') { ?>
     <table class="layout" cellpadding="2" cellspacing="1" border="0" align="center" style="margin-top: 1em;">
-        <?php
-        foreach ($Keys as $Key) {
-            ?>
+<?php foreach ($Keys as $Key) {
+        $value = $Cache->get_value($Key);
+?>
             <tr>
-                <td><?=display_str($Key)?></td>
+                <td style="vertical-align: top;"><?=display_str($Key)?></td>
                 <td>
-                    <pre><?php var_dump($Cache->get_value($Key)); ?></pre>
+<?php   if ($value) { ?>
+                    <pre style="padding: 0px; margin: 0px;"><?= print_r($value, true) ?></pre>
+<?php   } else { ?>
+                    <i>no value</i>
+<?php   } ?>
                 </td>
             </tr>
-        <?php    } ?>
+<?php } ?>
     </table>
     <?php
 }

@@ -1,39 +1,42 @@
 <?php
 
+use \Gazelle\Manager\Notification;
+$notification = new Notification($UserID);
+
 $Type = $_POST['type'];
 
 switch($Type) {
-    case NotificationsManager::INBOX:
-        NotificationsManager::clear_inbox();
+    case Notification::BLOG:
+        G::$LoggedUser['LastReadBlog'] = $notification->clearBlog();
         break;
-    case NotificationsManager::NEWS:
-        NotificationsManager::clear_news();
+    case Notification::COLLAGES:
+        $notification->clearCollages();
         break;
-    case NotificationsManager::BLOG:
-        NotificationsManager::clear_blog();
+    case Notification::GLOBALNOTICE:
+        $notification->clearGlobal();
         break;
-    case NotificationsManager::STAFFPM:
-        NotificationsManager::clear_staff_pms();
+    case Notification::INBOX:
+        $notification->clearInbox();
         break;
-    case NotificationsManager::TORRENTS:
-        NotificationsManager::clear_torrents();
+    case Notification::NEWS:
+        G::$LoggedUser['LastReadNews'] = $notification->clearNews();
         break;
-    case NotificationsManager::QUOTES:
-        NotificationsManager::clear_quotes();
+    case Notification::QUOTES:
+        $notification->clearQuotes();
         break;
-    case NotificationsManager::SUBSCRIPTIONS:
-        NotificationsManager::clear_subscriptions();
+    case Notification::STAFFPM:
+        $notification->clearStaffPMs();
         break;
-    case NotificationsManager::COLLAGES:
-        NotificationsManager::clear_collages();
+    case Notification::SUBSCRIPTIONS:
+        $notification->clearSubscriptions($UserID);
         break;
-    case NotificationsManager::GLOBALNOTICE:
-        NotificationsManager::clear_global_notification();
+    case Notification::TORRENTS:
+        $notification->clearTorrents();
         break;
     default:
         break;
 }
 
 if (strpos($Type, "oneread_") === 0) {
-    NotificationsManager::clear_one_read($Type);
+    $notification->clearOneRead($Type);
 }

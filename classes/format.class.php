@@ -19,17 +19,17 @@ class Format {
         'default'  => 'tl_notice',
         'snatched' => 'tl_snatched',
 
-        'freeleech'            => 'tl_free',
-        'neutral leech'        => 'tl_free tl_neutral',
-        'personal freeleech'=> 'tl_free tl_personal',
+        'freeleech'          => 'tl_free',
+        'neutral leech'      => 'tl_free tl_neutral',
+        'personal freeleech' => 'tl_free tl_personal',
 
-        'reported'        => 'tl_reported',
-        'bad tags'        => 'tl_reported tl_bad_tags',
-        'bad folders'    => 'tl_reported tl_bad_folders',
-        'bad file names'=> 'tl_reported tl_bad_file_names',
-        'missing lineage'=> 'tl_reported tl_missing_lineage',
-        'cassette approved'        => 'tl_approved tl_cassete',
-        'lossy master approved'    => 'tl_approved tl_lossy_master',
+        'reported'              => 'tl_reported',
+        'bad tags'              => 'tl_reported tl_bad_tags',
+        'bad folders'           => 'tl_reported tl_bad_folders',
+        'bad file names'        => 'tl_reported tl_bad_file_names',
+        'missing lineage'       => 'tl_reported tl_missing_lineage',
+        'cassette approved'     => 'tl_approved tl_cassete',
+        'lossy master approved' => 'tl_approved tl_lossy_master',
         'lossy web approved'    => 'tl_approved tl_lossy_web'
     ];
 
@@ -263,8 +263,8 @@ class Format {
             $Pages = '';
 
             if ($StartPage > 1) {
-                $Pages .= "<a href=\"$Location?page=1$QueryString$Anchor\"><strong>&lt;&lt; First</strong></a> ";
-                $Pages .= "<a href=\"$Location?page=".($StartPage - 1).$QueryString.$Anchor.'" class="pager_prev"><strong>&lt; Prev</strong></a> | ';
+                $Pages .= "<a href=\"$Location?page=1$QueryString$Anchor\"><strong>&laquo; First</strong></a> ";
+                $Pages .= "<a href=\"$Location?page=".($StartPage - 1).$QueryString.$Anchor.'" class="pager_prev"><strong>&lsaquo; Prev</strong></a> | ';
             }
             //End change
 
@@ -273,10 +273,15 @@ class Format {
                     $Pages .= "<a href=\"$Location?page=$i$QueryString$Anchor\">";
                 }
                 $Pages .= '<strong>';
+                $PageStartPosition = (($i - 1) * $ItemsPerPage) + 1;
                 if ($i * $ItemsPerPage > $TotalRecords) {
-                    $Pages .= ((($i - 1) * $ItemsPerPage) + 1)."-$TotalRecords";
+                    if ($PageStartPosition == $TotalRecords) {
+                        $Pages .= $TotalRecords;
+                    } else {
+                        $Pages .= "$PageStartPosition-$TotalRecords";
+                    }
                 } else {
-                    $Pages .= ((($i - 1) * $ItemsPerPage) + 1).'-'.($i * $ItemsPerPage);
+                    $Pages .= "$PageStartPosition-" . ($i * $ItemsPerPage);
                 }
 
                 $Pages .= '</strong>';
@@ -289,8 +294,8 @@ class Format {
             }
 
             if ($StartPage && $StartPage < $TotalPages) {
-                $Pages .= " | <a href=\"$Location?page=".($StartPage + 1).$QueryString.$Anchor.'" class="pager_next"><strong>Next &gt;</strong></a> ';
-                $Pages .= "<a href=\"$Location?page=$TotalPages$QueryString$Anchor\"><strong> Last &gt;&gt;</strong></a>";
+                $Pages .= " | <a href=\"$Location?page=".($StartPage + 1).$QueryString.$Anchor.'" class="pager_next"><strong>Next &rsaquo;</strong></a> ';
+                $Pages .= "<a href=\"$Location?page=$TotalPages$QueryString$Anchor\"><strong> Last &raquo;</strong></a>";
             }
         }
         if ($TotalPages > 1) {
@@ -306,6 +311,7 @@ class Format {
      *
      * @param int $Size
      * @param int $Levels Number of decimal places. Defaults to 2, unless the size >= 1TB, in which case it defaults to 4.
+     *                    or 0 in the case of bytes.
      * @return string formatted number.
      */
     public static function get_size($Size, $Levels = 2) {
@@ -315,6 +321,9 @@ class Format {
         }
         if (func_num_args() == 1 && $Steps >= 4) {
             $Levels++;
+        }
+        if ($Steps == 0) {
+            $Levels = 0;
         }
         return number_format($Size, $Levels) . $Units[$Steps];
     }
@@ -473,51 +482,6 @@ class Format {
         return " $ClassName";
     }
 
-
-    /**
-     * Detect the encoding of a string and transform it to UTF-8.
-     *
-     * @param string $Str
-     * @return UTF-8 encoded version of $Str
-     */
-    public static function make_utf8($Str) {
-        if ($Str != '') {
-            if (self::is_utf8($Str)) {
-                $Encoding = 'UTF-8';
-            }
-            if (empty($Encoding)) {
-                $Encoding = mb_detect_encoding($Str, 'UTF-8, ISO-8859-1');
-            }
-            if (empty($Encoding)) {
-                $Encoding = 'ISO-8859-1';
-            }
-            if ($Encoding == 'UTF-8') {
-                return $Str;
-            } else {
-                return @mb_convert_encoding($Str, 'UTF-8', $Encoding);
-            }
-        }
-    }
-
-    /**
-     * Magical function.
-     *
-     * @param string $Str function to detect encoding on.
-     * @return true if the string is in UTF-8.
-     */
-    public static function is_utf8($Str) {
-        return preg_match('%^(?:
-            [\x09\x0A\x0D\x20-\x7E]              // ASCII
-            | [\xC2-\xDF][\x80-\xBF]             // non-overlong 2-byte
-            | \xE0[\xA0-\xBF][\x80-\xBF]         // excluding overlongs
-            | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  // straight 3-byte
-            | \xED[\x80-\x9F][\x80-\xBF]         // excluding surrogates
-            | \xF0[\x90-\xBF][\x80-\xBF]{2}      // planes 1-3
-            | [\xF1-\xF3][\x80-\xBF]{3}          // planes 4-15
-            | \xF4[\x80-\x8F][\x80-\xBF]{2}      // plane 16
-            )*$%xs', $Str
-        );
-    }
 
     /**
      * Modified accessor for the $TorrentLabels array

@@ -68,7 +68,6 @@ switch ($Document) {
     case 'logchecker':
     case 'login':
     case 'logout':
-    case 'questions':
     case 'random':
     case 'recovery':
     case 'referral':
@@ -78,7 +77,6 @@ switch ($Document) {
     case 'requests':
     case 'rules':
     case 'signup':
-    case 'sitehistory':
     case 'staff':
     case 'staffblog':
     case 'staffpm':

@@ -75,7 +75,7 @@ if (!empty($_REQUEST['confirm'])) {
         }
 
         if (!$Err) {
-            $torrent_pass = Users::make_secret();
+            $torrent_pass = randomString();
 
             // Previously SELECT COUNT(ID) FROM users_main, which is a lot slower.
             $DB->query("
@@ -118,6 +118,20 @@ if (!empty($_REQUEST['confirm'])) {
             );
 
             $DB->prepared_query('
+                INSERT INTO user_bonus
+                       (user_id)
+                VALUES (?)
+                ', $UserID
+            );
+
+            $DB->prepared_query('
+                INSERT INTO user_flt
+                       (user_id)
+                VALUES (?)
+                ', $UserID
+            );
+
+            $DB->prepared_query('
                 INSERT INTO users_leech_stats
                        (UserID, Uploaded)
                 VALUES (?,      ?)
@@ -126,26 +140,26 @@ if (!empty($_REQUEST['confirm'])) {
                     STARTING_UPLOAD
             );
 
-            $DB->query("
+            $StyleID = $DB->scalar("
                 SELECT ID
                 FROM stylesheets
-                WHERE `Default` = '1'");
-            list($StyleID) = $DB->next_record();
-            $AuthKey = Users::make_secret();
+                WHERE `Default` = '1'
+            ");
+            $AuthKey = randomString();
 
             if ($InviteReason !== '') {
-                $InviteReason = db_string(sqltime()." - $InviteReason");
+                $InviteReason = sqltime()." - $InviteReason";
             }
             $DB->prepared_query('
                 INSERT INTO users_info
-                       (UserID, StyleID, AuthKey, Inviter, AdminComment, JoinDate)
-                VALUES (?,      ?,       ?,       ?,       ?,            now())
+                       (UserID, StyleID, AuthKey, Inviter, AdminComment)
+                VALUES (?,      ?,       ?,       ?,       ?)
                 ', $UserID, $StyleID, $AuthKey, $InviterID, $InviteReason
             );
             $DB->prepared_query('
                 INSERT INTO users_history_ips
-                       (UserID, IP, StartTime)
-                VALUES (?,      ?,  now())
+                       (UserID, IP)
+                VALUES (?,      ?)
                 ', $UserID, $_SERVER['REMOTE_ADDR']
             );
             $DB->prepared_query('

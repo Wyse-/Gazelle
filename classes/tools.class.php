@@ -1,35 +1,5 @@
 <?php
 class Tools {
-    /**
-     * Returns true if given IP is banned.
-     *
-     * @param string $IP
-     */
-    public static function site_ban_ip($IP) {
-        global $Debug;
-        $A = substr($IP, 0, strcspn($IP, '.'));
-        $IPNum = Tools::ip_to_unsigned($IP);
-        $IPBans = G::$Cache->get_value('ip_bans_'.$A);
-        if (!is_array($IPBans)) {
-            $SQL = sprintf("
-                SELECT ID, FromIP, ToIP
-                FROM ip_bans
-                WHERE FromIP BETWEEN %d << 24 AND (%d << 24) - 1", $A, $A + 1);
-            $QueryID = G::$DB->get_query_id();
-            G::$DB->query($SQL);
-            $IPBans = G::$DB->to_array(0, MYSQLI_NUM);
-            G::$DB->set_query_id($QueryID);
-            G::$Cache->cache_value('ip_bans_'.$A, $IPBans, 0);
-        }
-        foreach ($IPBans as $Index => $IPBan) {
-            list ($ID, $FromIP, $ToIP) = $IPBan;
-            if ($IPNum >= $FromIP && $IPNum <= $ToIP) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Returns the unsigned form of an IP address.
@@ -191,7 +161,7 @@ class Tools {
             SET m.Enabled = '2',
                 m.can_leech = '0',
                 i.AdminComment = CONCAT('".sqltime()." - ".($AdminComment ? $AdminComment : 'Disabled by system')."\n\n', i.AdminComment),
-                i.BanDate = '".sqltime()."',
+                i.BanDate = now(),
                 i.BanReason = '$BanReason',
                 i.RatioWatchDownload = ".($BanReason == 2 ? 'm.Downloaded' : "'0'")."
             WHERE m.ID IN(".implode(',', $UserIDs).') ');
@@ -319,6 +289,4 @@ class Tools {
 
         return (($IP>>$SubnetMaskBits) == ($SubnetIP>>$SubnetMaskBits));
     }
-
 }
-?>

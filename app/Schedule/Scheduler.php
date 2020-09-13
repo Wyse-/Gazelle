@@ -2,18 +2,11 @@
 
 namespace Gazelle\Schedule;
 
-use \Gazelle\Util\{Irc, Time};
+use \Gazelle\Util\Irc;
 
-class Scheduler {
-    protected $db;
-    protected $cache;
+class Scheduler extends \Gazelle\Base {
 
     const CACHE_TASKS = 'scheduled_tasks';
-
-    public function __construct(\DB_MYSQL $db, \CACHE $cache) {
-        $this->db = $db;
-        $this->cache = $cache;
-    }
 
     public function getTask(int $id) {
         $tasks = $this->getTasks();
@@ -134,41 +127,56 @@ class Scheduler {
         return $tasks;
     }
 
-    public function getTaskHistory(int $id, string $limit) {
-        global $Debug;
-        $queryId = $this->db->prepared_query("
-            SELECT SQL_CALC_FOUND_ROWS periodic_task_history_id, launch_time, status, num_errors,
-                   num_items, duration_ms
+    public function getTaskHistory(int $id, int $limit, int $offset, string $sort, string $direction) {
+        $sortMap = [
+            'id'         => 'periodic_task_history_id',
+            'launchtime' => 'launch_time',
+            'status'     => 'status',
+            'errors'     => 'num_errors',
+            'items'      => 'num_items',
+            'duration'   => 'duration_ms'
+        ];
+
+        if (!isset($sortMap[$sort])) {
+            return null;
+        }
+        $sort = $sortMap[$sort];
+
+        $rowCount = $this->db->scalar('
+            SELECT count(*)
             FROM periodic_task_history
             WHERE periodic_task_id = ?
-            ORDER BY launch_time DESC
-            LIMIT $limit
-        ", $id);
-        $this->db->prepared_query('SELECT found_rows()');
-        list($rowCount) = $this->db->next_record();
-        $this->db->set_query_id($queryId);
+            ', $id);
 
+        $this->db->prepared_query("
+            SELECT periodic_task_history_id, launch_time, status, num_errors, num_items, duration_ms
+            FROM periodic_task_history
+            WHERE periodic_task_id = ?
+            ORDER BY $sort $direction
+            LIMIT ? OFFSET ?
+        ", $id, $limit, $offset);
         $items = $this->db->to_array('periodic_task_history_id', MYSQLI_ASSOC);
 
-        $placeholders = implode(',', array_fill(0, count($items), '?'));
-        $this->db->prepared_query("
-            SELECT periodic_task_history_id, event_time, severity, event, reference
-            FROM periodic_task_history_event
-            WHERE periodic_task_history_id IN ($placeholders)
-            ORDER BY event_time, periodic_task_history_event_id
-        ", ...array_keys($items));
-        $events = $this->db->to_array(false, MYSQLI_ASSOC);
-
         $historyEvents = [];
-        foreach ($events as $event) {
-            list($historyId, $eventTime, $severity, $message, $reference) = array_values($event);
-            $historyEvents[$historyId][] = new Event($severity, $message, $reference, $eventTime);
+        if (count($items)) {
+            $this->db->prepared_query("
+                SELECT periodic_task_history_id, event_time, severity, event, reference
+                FROM periodic_task_history_event
+                WHERE periodic_task_history_id IN (" . placeholders($items) . ")
+                ORDER BY event_time, periodic_task_history_event_id
+            ", ...array_keys($items));
+            $events = $this->db->to_array(false, MYSQLI_ASSOC);
+
+            foreach ($events as $event) {
+                list($historyId, $eventTime, $severity, $message, $reference) = array_values($event);
+                $historyEvents[$historyId][] = new Event($severity, $message, $reference, $eventTime);
+            }
         }
 
         $task = new TaskHistory($this->getTask($id)['name'], $rowCount);
         foreach ($items as $item) {
             list($historyId, $launchTime, $status, $numErrors, $numItems, $duration) = array_values($item);
-            $taskEvents = array_key_exists($historyId, $historyEvents) ? $historyEvents[$historyId] : [];
+            $taskEvents = $historyEvents[$historyId] ?? [];
             $task->items[] = new HistoryItem($launchTime, $status, $numErrors, $numItems, $duration, $taskEvents);
         }
 
@@ -191,8 +199,9 @@ class Scheduler {
                 'name' => $name,
                 'data' => array_map(
                     function ($v) use ($id, $key, $time) {
-                        if ($time)
+                        if ($time) {
                             return sprintf('[%d, %d]', strtotime($v[$key]) * 1000, $v[$id]);
+                        }
 
                         return sprintf("['%s', %d]", $v[$key], $v[$id]);
                     },
@@ -219,13 +228,13 @@ class Scheduler {
         $hourly = $this->constructAxes($this->db->to_array(false, MYSQLI_ASSOC), 'date', ['duration', 'processed'], true);
 
         $this->db->prepared_query("
-            SELECT cast(pth.launch_time AS DATE) AS date,
+            SELECT date(pth.launch_time) AS date,
                    sum(pth.duration_ms) AS duration,
                    sum(pth.num_items) AS processed
                    FROM periodic_task pt
             INNER JOIN periodic_task_history pth USING (periodic_task_id)
             WHERE pt.is_enabled IS TRUE
-              AND pth.launch_time >= now() - INTERVAL ? DAY
+              AND pth.launch_time BETWEEN curdate() - INTERVAL ? DAY AND curdate()
             GROUP BY 1
             ORDER BY 1
             ", $days
@@ -239,7 +248,7 @@ class Scheduler {
             FROM periodic_task pt
             INNER JOIN periodic_task_history pth USING (periodic_task_id)
             WHERE pt.is_enabled IS TRUE
-              AND pth.launch_time >= now() - INTERVAL ? DAY
+              AND pth.launch_time BETWEEN curdate() - INTERVAL ? DAY AND curdate()
             GROUP BY 1
             ORDER BY 1
             ", $days
@@ -264,7 +273,7 @@ class Scheduler {
             INNER JOIN periodic_task_history pth USING (periodic_task_id)
             LEFT JOIN periodic_task_history_event pthe USING (periodic_task_history_id)
             WHERE pt.is_enabled IS TRUE
-              AND pth.launch_time >= now() - INTERVAL ? DAY
+              AND pth.launch_time BETWEEN curdate() - INTERVAL ? DAY AND curdate()
             ", $days
         );
         $totals = $this->db->next_record(MYSQLI_ASSOC);
@@ -278,7 +287,21 @@ class Scheduler {
         ];
     }
 
-    public function getTaskRuntimeStats(int $days = 7) {
+    public function getTaskRuntimeStats(int $taskId, int $days = 28) {
+        $this->db->prepared_query("
+            SELECT date(pth.launch_time) AS date,
+                   sum(pth.duration_ms) AS duration,
+                   sum(pth.num_items) AS processed
+                   FROM periodic_task pt
+            INNER JOIN periodic_task_history pth USING (periodic_task_id)
+            WHERE pt.periodic_task_id = ?
+              AND pth.launch_time BETWEEN curdate() - INTERVAL ? DAY AND curdate()
+            GROUP BY 1
+            ORDER BY 1
+            ", $taskId, $days
+        );
+
+        return $this->constructAxes($this->db->to_array(false, MYSQLI_ASSOC), 'date', ['duration', 'processed'], true);
     }
 
     public function getTaskSnapshot(float $start, float $end) {
@@ -287,13 +310,25 @@ class Scheduler {
             FROM periodic_task pt
             INNER JOIN periodic_task_history pth USING (periodic_task_id)
             WHERE pth.launch_time <= ? AND pth.launch_time + INTERVAL pth.duration_ms / 1000 SECOND >= ?
-            ', Time::sqlTime($end), Time::sqlTime($start)
+            ', $end, $start
         );
 
         return $this->db->to_array('periodic_task_id', MYSQLI_ASSOC);
     }
 
     public function run() {
+        $phinxBinary = realpath(__DIR__ . '/../../vendor/bin/phinx');
+        $phinxScript = realpath(__DIR__ . '/../../phinx.php');
+        $pendingMigrations = array_filter(json_decode(shell_exec($phinxBinary . ' status -c '
+            . $phinxScript . ' --format=json | tail -n 1'), true)['migrations'],
+                function($value) { return count($value) > 0 && $value['migration_status'] === 'down'; });
+
+        if (count($pendingMigrations)) {
+            Irc::sendChannel('Pending migrations found, scheduler cannot continue', LAB_CHAN);
+            echo "Pending migrations found, aborting\n";
+            return;
+        }
+
         $this->db->prepared_query('
             SELECT pt.periodic_task_id
             FROM periodic_task pt
@@ -329,8 +364,8 @@ class Scheduler {
         $taskRunner->begin();
         try {
             $taskRunner->run();
-        } catch (\Exception $e) {
-            $taskRunner->log('Caught exception: ' . $e->getMessage(), 'error');
+        } catch (\Throwable $e) {
+            $taskRunner->log('Caught exception: ' . str_replace(SERVER_ROOT, '', $e->getMessage()), 'error');
         } finally {
             $taskRunner->end($task['is_sane']);
         }
@@ -340,8 +375,9 @@ class Scheduler {
                 UPDATE periodic_task
                 SET run_now = FALSE
                 WHERE periodic_task_id = ?
-                ', $task['periodic_task_id']
+                ', $id
             );
+            $this->clearCache();
         }
     }
 
@@ -350,6 +386,6 @@ class Scheduler {
         if (!class_exists($class)) {
             return null;
         }
-        return new $class($this->db, $this->cache, $id, $name, $isDebug);
+        return new $class($id, $name, $isDebug);
     }
 }

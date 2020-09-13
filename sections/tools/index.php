@@ -1,4 +1,7 @@
 <?php
+
+use \Gazelle\Manager\Notification;
+
 /*****************************************************************
     Tools switch center
 
@@ -18,7 +21,7 @@ if (isset($argv[1])) {
 }
 
 if (!isset($_REQUEST['action'])) {
-    include(SERVER_ROOT.'/sections/tools/tools.php');
+    require(__DIR__ . '/tools.php');
     die();
 }
 
@@ -46,70 +49,90 @@ $Feed = new Feed;
 switch ($_REQUEST['action']) {
     //Services
     case 'get_host':
-        include(SERVER_ROOT.'/sections/tools/services/get_host.php');
+        require(__DIR__ . '/services/get_host.php');
         break;
     case 'get_cc':
-        include(SERVER_ROOT.'/sections/tools/services/get_cc.php');
+        require(__DIR__ . '/services/get_cc.php');
         break;
     //Managers
     case 'categories':
-        include(SERVER_ROOT . '/sections/tools/managers/categories_list.php');
+        require(__DIR__ . '/managers/categories_list.php');
         break;
 
     case 'categories_alter':
-        include(SERVER_ROOT . '/sections/tools/managers/categories_alter.php');
+        require(__DIR__ . '/managers/categories_alter.php');
         break;
 
     case 'forum':
-        include(SERVER_ROOT.'/sections/tools/managers/forum_list.php');
+        require(__DIR__ . '/managers/forum_list.php');
         break;
 
     case 'forum_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/forum_alter.php');
+        require(__DIR__ . '/managers/forum_alter.php');
         break;
 
     case 'irc':
-        include(SERVER_ROOT . '/sections/tools/managers/irc_list.php');
+        require(__DIR__ . '/managers/irc_list.php');
+        break;
+
+    case 'dbkey':
+        require(__DIR__ . '/managers/db_key.php');
+        break;
+
+    case 'navigation_alter':
+        require(__DIR__ . '/managers/navigation_alter.php');
+        break;
+
+    case 'navigation':
+        require(__DIR__ . '/managers/navigation_list.php');
+        break;
+
+    case 'forum_transitions':
+        require(__DIR__ . '/managers/forum_transitions_list.php');
+        break;
+
+    case 'forum_transitions_alter':
+        require(__DIR__ . '/managers/forum_transitions_alter.php');
         break;
 
     case 'irc_alter':
-        include(SERVER_ROOT . '/sections/tools/managers/irc_alter.php');
+        require(__DIR__ . '/managers/irc_alter.php');
         break;
 
     case 'whitelist':
-        include(SERVER_ROOT.'/sections/tools/managers/whitelist_list.php');
+        require(__DIR__ . '/managers/whitelist_list.php');
         break;
 
     case 'whitelist_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/whitelist_alter.php');
+        require(__DIR__ . '/managers/whitelist_alter.php');
         break;
 
     case 'referral_accounts':
-        include(SERVER_ROOT.'/sections/tools/managers/referral_accounts.php');
+        require(__DIR__ . '/managers/referral_accounts.php');
         break;
 
     case 'referral_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/referral_alter.php');
+        require(__DIR__ . '/managers/referral_alter.php');
         break;
 
     case 'referral_users':
-        include(SERVER_ROOT.'/sections/tools/managers/referral_users.php');
+        require(__DIR__ . '/managers/referral_users.php');
         break;
 
     case 'payment_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/payment_alter.php');
+        require(__DIR__ . '/finances/payment_alter.php');
         break;
 
     case 'payment_list':
-        include(SERVER_ROOT.'/sections/tools/managers/payment_list.php');
+        require(__DIR__ . '/finances/payment_list.php');
         break;
 
     case 'enable_requests':
-        include(SERVER_ROOT.'/sections/tools/managers/enable_requests.php');
+        require(__DIR__ . '/managers/enable_requests.php');
         break;
     case 'ajax_take_enable_request':
         if (FEATURE_EMAIL_REENABLE) {
-            include(SERVER_ROOT.'/sections/tools/managers/ajax_take_enable_request.php');
+            require(__DIR__ . '/managers/ajax_take_enable_request.php');
         } else {
             // Prevent post requests to the ajax page
             header("Location: tools.php");
@@ -118,48 +141,32 @@ switch ($_REQUEST['action']) {
         break;
 
     case 'login_watch':
-        include(SERVER_ROOT.'/sections/tools/managers/login_watch.php');
-        break;
-
-    case 'recommend':
-        include(SERVER_ROOT.'/sections/tools/managers/recommend_list.php');
-        break;
-
-    case 'recommend_add':
-        include(SERVER_ROOT.'/sections/tools/managers/recommend_add.php');
-        break;
-
-    case 'recommend_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/recommend_alter.php');
-        break;
-
-    case 'recommend_restore':
-        include(SERVER_ROOT.'/sections/tools/managers/recommend_restore.php');
+        require(__DIR__ . '/managers/login_watch.php');
         break;
 
     case 'email_blacklist':
-        include(SERVER_ROOT.'/sections/tools/managers/email_blacklist.php');
+        require(__DIR__ . '/managers/email_blacklist.php');
         break;
 
     case 'email_blacklist_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/email_blacklist_alter.php');
+        require(__DIR__ . '/managers/email_blacklist_alter.php');
         break;
 
     case 'email_blacklist_search':
-        include(SERVER_ROOT.'/sections/tools/managers/email_blacklist_search.php');
+        require(__DIR__ . '/managers/email_blacklist_search.php');
         break;
 
     case 'dnu':
-        include(SERVER_ROOT.'/sections/tools/managers/dnu_list.php');
+        require(__DIR__ . '/managers/dnu_list.php');
         break;
 
     case 'dnu_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/dnu_alter.php');
+        require(__DIR__ . '/managers/dnu_alter.php');
         break;
 
     case 'editnews':
     case 'news':
-        include(SERVER_ROOT.'/sections/tools/managers/news.php');
+        require(__DIR__ . '/managers/news.php');
         break;
 
     case 'takeeditnews':
@@ -208,311 +215,175 @@ switch ($_REQUEST['action']) {
         }
 
         $DB->prepared_query("
-            INSERT INTO news (UserID, Title, Body, Time)
-            VALUES (?, ?, ?, now())
+            INSERT INTO news (UserID, Title, Body)
+            VALUES (?, ?, ?)
         ", $LoggedUser['ID'], $_POST['title'], $_POST['body']);
         $Cache->delete_value('news_latest_id');
         $Cache->delete_value('news_latest_title');
         $Cache->delete_value('news');
 
-        NotificationsManager::send_push(NotificationsManager::get_push_enabled_users(), $_POST['title'], $_POST['body'], site_url() . 'index.php', NotificationsManager::NEWS);
+        $notification = new Notification(G::$LoggedUser['ID']);
+        $notification->push($notification->pushableUsers(), $_POST['title'], $_POST['body'], site_url() . 'index.php', Notification::NEWS);
 
         header('Location: index.php');
         break;
 
     case 'bonus_points':
-        include(SERVER_ROOT.'/sections/tools/managers/bonus_points.php');
+        require(__DIR__ . '/managers/bonus_points.php');
         break;
     case 'tokens':
-        include(SERVER_ROOT.'/sections/tools/managers/tokens.php');
+        require(__DIR__ . '/managers/tokens.php');
         break;
     case 'multiple_freeleech':
-        include(SERVER_ROOT.'/sections/tools/managers/multiple_freeleech.php');
+        require(__DIR__ . '/managers/multiple_freeleech.php');
         break;
     case 'ocelot':
-        include(SERVER_ROOT.'/sections/tools/managers/ocelot.php');
+        require(__DIR__ . '/managers/ocelot.php');
         break;
-    case 'ocelot_info':
-        include(SERVER_ROOT.'/sections/tools/data/ocelot_info.php');
+    case 'tags':
+        require(__DIR__ . '/managers/tags.php');
         break;
-    case 'official_tags':
-        include(SERVER_ROOT.'/sections/tools/managers/official_tags.php');
+    case 'tags_aliases':
+        require(__DIR__ . '/managers/tags_aliases.php');
         break;
-    case 'edit_tags':
-        include(SERVER_ROOT.'/sections/tools/misc/tags.php');
-        break;
-    case 'tag_aliases':
-        include(SERVER_ROOT.'/sections/tools/managers/tag_aliases.php');
+    case 'tags_official':
+        require(__DIR__ . '/managers/tags_official.php');
         break;
     case 'label_aliases':
-        include(SERVER_ROOT.'/sections/tools/managers/label_aliases.php');
+        require(__DIR__ . '/managers/label_aliases.php');
         break;
     case 'change_log':
-        include(SERVER_ROOT.'/sections/tools/managers/change_log.php');
+        require(__DIR__ . '/managers/change_log.php');
         break;
     case 'global_notification':
-        include(SERVER_ROOT.'/sections/tools/managers/global_notification.php');
+        require(__DIR__ . '/managers/global_notification.php');
         break;
     case 'take_global_notification':
-        include(SERVER_ROOT.'/sections/tools/managers/take_global_notification.php');
+        require(__DIR__ . '/managers/take_global_notification.php');
         break;
     case 'permissions':
-        if (!check_perms('admin_manage_permissions')) {
-            error(403);
-        }
-
-        if (!empty($_REQUEST['id'])) {
-            $Val->SetFields('name', true, 'string', 'You did not enter a valid name for this permission set.');
-            $Val->SetFields('level', true, 'number', 'You did not enter a valid level for this permission set.');
-            $_POST['maxcollages'] = (empty($_POST['maxcollages'])) ? 0 : $_POST['maxcollages'];
-            $Val->SetFields('maxcollages', true, 'number', 'You did not enter a valid number of personal collages.');
-
-            if (is_numeric($_REQUEST['id'])) {
-                $DB->prepared_query("
-                    SELECT p.ID, p.Name, p.Level, p.Secondary, p.PermittedForums, p.Values, p.DisplayStaff, p.StaffGroup, COUNT(u.ID)
-                    FROM permissions AS p
-                        LEFT JOIN users_main AS u ON u.PermissionID = p.ID
-                    WHERE p.ID = ?
-                    GROUP BY p.ID", $_REQUEST['id']);
-                list($ID, $Name, $Level, $Secondary, $Forums, $Values, $DisplayStaff, $StaffGroup, $UserCount) = $DB->next_record(MYSQLI_NUM, [5]);
-
-                if (!check_perms('admin_manage_permissions', $Level)) {
-                    error(403);
-                }
-                $Values = unserialize($Values);
-            }
-
-            if (!empty($_POST['submit'])) {
-                $Err = $Val->ValidateForm($_POST);
-
-                if (!is_numeric($_REQUEST['id'])) {
-                    $DB->prepared_query("
-                        SELECT ID
-                        FROM permissions
-                        WHERE Level = ?", $_REQUEST['level']);
-                    list($DupeCheck)=$DB->next_record();
-
-                    if ($DupeCheck) {
-                        $Err = 'There is already a permission class with that level.';
-                    }
-                }
-
-                $Values = [];
-                foreach ($_REQUEST as $Key => $Perms) {
-                    if (substr($Key, 0, 5) == 'perm_') {
-                        $Values[substr($Key, 5)] = (int)$Perms;
-                    }
-                }
-
-                $Name = $_REQUEST['name'];
-                $Level = $_REQUEST['level'];
-                $Secondary = empty($_REQUEST['secondary']) ? 0 : 1;
-                $Forums = $_REQUEST['forums'];
-                $DisplayStaff = empty($_REQUEST['displaystaff']) ? '0' : '1';
-                $StaffGroup = $_REQUEST['staffgroup'];
-                if (!$StaffGroup) {
-                    $StaffGroup = null;
-                }
-                $Values['MaxCollages'] = $_REQUEST['maxcollages'];
-
-                if (!$Err) {
-                    if (!is_numeric($_REQUEST['id'])) {
-                        $DB->prepared_query("
-                            INSERT INTO permissions (Level, Name, Secondary, PermittedForums, `Values`, DisplayStaff, StaffGroup)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            $Level, $Name, $Secondary, $Forums, serialize($Values), $DisplayStaff, $StaffGroup);
-                    } else {
-                        $DB->prepared_query("
-                            UPDATE permissions
-                            SET Level = ?,
-                                Name = ?,
-                                Secondary = ?,
-                                PermittedForums = ?,
-                                `Values` = ?,
-                                DisplayStaff = ?,
-                                StaffGroup = ?
-                            WHERE ID = ?",
-                            $Level, $Name, $Secondary, $Forums, serialize($Values), $DisplayStaff, $StaffGroup, $_REQUEST['id']);
-                        $Cache->delete_value('perm_'.$_REQUEST['id']);
-                        if ($Secondary) {
-                            $DB->prepared_query("
-                                SELECT DISTINCT UserID
-                                FROM users_levels
-                                WHERE PermissionID = ?", $_REQUEST['id']);
-                            while ($UserID = $DB->next_record()) {
-                                $Cache->delete_value("user_info_heavy_$UserID");
-                            }
-                        }
-                    }
-                    $Cache->delete_value('classes');
-                    $Cache->delete_value('staff');
-                } else {
-                    error($Err);
-                }
-            }
-
-            include(SERVER_ROOT.'/sections/tools/managers/permissions_alter.php');
-
-        } else {
-            if (!empty($_REQUEST['removeid'])) {
-                $DB->prepared_query("
-                    DELETE FROM permissions
-                    WHERE ID = ?", $_REQUEST['removeid']);
-                $DB->prepared_query("
-                    SELECT UserID
-                    FROM users_levels
-                    WHERE PermissionID = ?", $_REQUEST['removeid']);
-                while (list($UserID) = $DB->next_record()) {
-                    $Cache->delete_value("user_info_$UserID");
-                    $Cache->delete_value("user_info_heavy_$UserID");
-                }
-                $DB->prepared_query("
-                    DELETE FROM users_levels
-                    WHERE PermissionID = ?", $_REQUEST['removeid']);
-                $DB->prepared_query("
-                    SELECT ID
-                    FROM users_main
-                    WHERE PermissionID = ?", $_REQUEST['removeid']);
-                while (list($UserID) = $DB->next_record()) {
-                    $Cache->delete_value("user_info_$UserID");
-                    $Cache->delete_value("user_info_heavy_$UserID");
-                }
-                $DB->prepared_query("
-                    UPDATE users_main
-                    SET PermissionID = ?
-                    WHERE PermissionID = ?", USER, $_REQUEST['removeid']);
-
-                $Cache->delete_value('classes');
-            }
-
-            include(SERVER_ROOT.'/sections/tools/managers/permissions_list.php');
-        }
+        // this is retarded and doesn't always alter things but it's better than being in __FILE__
+        require(__DIR__ . '/managers/permissions_alter.php');
+        break;
+    case 'privilege_matrix':
+        require(__DIR__ . '/managers/privilege_matrix.php');
         break;
     case 'staff_groups_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/staff_groups_alter.php');
+        require(__DIR__ . '/managers/staff_groups_alter.php');
         break;
     case 'staff_groups':
-        include(SERVER_ROOT.'/sections/tools/managers/staff_groups_list.php');
+        require(__DIR__ . '/managers/staff_groups_list.php');
         break;
     case 'ip_ban':
-        //TODO: Clean up DB table ip_bans.
-        include(SERVER_ROOT.'/sections/tools/managers/bans.php');
+        require(__DIR__ . '/managers/bans.php');
         break;
     case 'quick_ban':
-        include(SERVER_ROOT.'/sections/tools/misc/quick_ban.php');
+        require(__DIR__ . '/managers/quick_ban.php');
         break;
-    //Data
-    case 'registration_log':
-        include(SERVER_ROOT.'/sections/tools/data/registration_log.php');
+    case 'calendar':
+        require(__DIR__ . '/managers/calendar.php');
+        break;
+    case 'get_calendar_event':
+        require(__DIR__ . '/managers/ajax_get_calendar_event.php');
+        break;
+    case 'take_calendar_event':
+        require(__DIR__ . '/managers/ajax_take_calendar_event.php');
+        break;
+    case 'stylesheets':
+        require(__DIR__ . '/managers/stylesheets_list.php');
+        break;
+    case 'mass_pm':
+        require(__DIR__ . '/managers/mass_pm.php');
+        break;
+    case 'take_mass_pm':
+        require(__DIR__ . '/managers/take_mass_pm.php');
         break;
 
-    case 'prvlog':
-        include(SERVER_ROOT.'/sections/tools/finances/btc_log.php');
+    case 'rate_limit':
+        require(__DIR__ . '/managers/rate_limit.php');
         break;
 
-    case 'bitcoin_unproc':
-        include(SERVER_ROOT.'/sections/tools/finances/bitcoin_unproc.php');
+    case 'donation_log':
+        require(__DIR__ . '/finances/btc_log.php');
         break;
 
     case 'bitcoin_balance':
-        include(SERVER_ROOT.'/sections/tools/finances/bitcoin_balance.php');
+        require(__DIR__ . '/finances/bitcoin_balance.php');
         break;
 
     case 'donor_rewards':
-        include(SERVER_ROOT.'/sections/tools/finances/donor_rewards.php');
+        require(__DIR__ . '/finances/donor_rewards.php');
         break;
+
+    //Data
+    case 'ocelot_info':
+        require(__DIR__ . '/data/ocelot_info.php');
+        break;
+
+    case 'registration_log':
+        require(__DIR__ . '/data/registration_log.php');
+        break;
+
     case 'upscale_pool':
-        include(SERVER_ROOT.'/sections/tools/data/upscale_pool.php');
+        require(__DIR__ . '/data/upscale_pool.php');
         break;
 
     case 'invite_pool':
-        include(SERVER_ROOT.'/sections/tools/data/invite_pool.php');
+        require(__DIR__ . '/data/invite_pool.php');
         break;
 
     case 'torrent_stats':
-        include(SERVER_ROOT.'/sections/tools/data/torrent_stats.php');
+        require(__DIR__ . '/data/torrent_stats.php');
         break;
 
     case 'user_flow':
-        include(SERVER_ROOT.'/sections/tools/data/user_flow.php');
+        require(__DIR__ . '/data/user_flow.php');
         break;
 
     case 'economic_stats':
-        include(SERVER_ROOT.'/sections/tools/data/economic_stats.php');
-        break;
-
-    case 'service_stats':
-        include(SERVER_ROOT.'/sections/tools/development/service_stats.php');
+        require(__DIR__ . '/data/economic_stats.php');
         break;
 
     case 'database_specifics':
-        include(SERVER_ROOT.'/sections/tools/data/database_specifics.php');
+        require(__DIR__ . '/data/database_specifics.php');
         break;
 
     case 'special_users':
-        include(SERVER_ROOT.'/sections/tools/data/special_users.php');
+        require(__DIR__ . '/data/special_users.php');
         break;
 
     case 'platform_usage':
-        include(SERVER_ROOT.'/sections/tools/data/platform_usage.php');
+        require(__DIR__ . '/data/platform_usage.php');
         break;
     //END Data
 
     //Misc
+    case 'service_stats':
+        require(__DIR__ . '/development/service_stats.php');
+        break;
+
     case 'update_geoip':
-        include(SERVER_ROOT.'/sections/tools/development/update_geoip.php');
-        break;
-
-    case 'update_offsets':
-        include(SERVER_ROOT.'/sections/tools/development/update_offsets.php');
-        break;
-
-    case 'dupe_ips':
-        include(SERVER_ROOT.'/sections/tools/misc/dupe_ip.php');
+        require(__DIR__ . '/development/update_geoip.php');
         break;
 
     case 'clear_cache':
-        include(SERVER_ROOT.'/sections/tools/development/clear_cache.php');
-        break;
-
-    case 'create_user':
-        include(SERVER_ROOT.'/sections/tools/misc/create_user.php');
-        break;
-
-    case 'manipulate_tree':
-        include(SERVER_ROOT.'/sections/tools/misc/manipulate_tree.php');
+        require(__DIR__ . '/development/clear_cache.php');
         break;
 
     case 'site_info':
-        include(SERVER_ROOT.'/sections/tools/development/site_info.php');
+        require(__DIR__ . '/development/site_info.php');
         break;
 
     case 'site_options':
-        include(SERVER_ROOT.'/sections/tools/development/site_options.php');
-        break;
-
-    case 'recommendations':
-        include(SERVER_ROOT.'/sections/tools/misc/recommendations.php');
-        break;
-
-    case 'analysis':
-        include(SERVER_ROOT.'/sections/tools/misc/analysis.php');
-        break;
-
-    case 'analysis_list':
-        include(__DIR__.'/misc/analysis_list.php');
+        require(__DIR__ . '/development/site_options.php');
         break;
 
     case 'process_info':
-        include(SERVER_ROOT.'/sections/tools/development/process_info.php');
-        break;
-
-    case 'rate_limit':
-        include(__DIR__.'/managers/rate_limit.php');
+        require(__DIR__ . '/development/process_info.php');
         break;
 
     case 'rerender_gallery':
-        include(SERVER_ROOT.'/sections/tools/development/rerender_gallery.php');
+        require(__DIR__ . '/development/rerender_gallery.php');
         break;
 
     case 'periodic':
@@ -520,85 +391,75 @@ switch ($_REQUEST['action']) {
         switch ($mode) {
             case 'run_now':
             case 'view':
-                include(SERVER_ROOT.'/sections/tools/development/periodic_view.php');
+                require(__DIR__ . '/development/periodic_view.php');
                 break;
             case 'detail':
-                include(SERVER_ROOT.'/sections/tools/development/periodic_detail.php');
+                require(__DIR__ . '/development/periodic_detail.php');
                 break;
             case 'stats':
-                include(SERVER_ROOT.'/sections/tools/development/periodic_stats.php');
+                require(__DIR__ . '/development/periodic_stats.php');
                 break;
             case 'edit':
-                include(SERVER_ROOT.'/sections/tools/development/periodic_edit.php');
+                require(__DIR__ . '/development/periodic_edit.php');
                 break;
             case 'alter':
-                include(SERVER_ROOT.'/sections/tools/development/periodic_alter.php');
+                require(__DIR__ . '/development/periodic_alter.php');
                 break;
         }
         break;
 
+    case 'analysis':
+        require(__DIR__ . '/misc/analysis.php');
+        break;
+
+    case 'dupe_ips':
+        require(__DIR__ . '/misc/dupe_ip.php');
+        break;
+
+    case 'create_user':
+        require(__DIR__ . '/misc/create_user.php');
+        break;
+
+    case 'manipulate_tree':
+        require(__DIR__ . '/misc/manipulate_tree.php');
+        break;
+
+    case 'analysis_list':
+        require(__DIR__  . '/misc/analysis_list.php');
+        break;
+
+    case 'monthalbum':
+        require(__DIR__ . '/misc/album_of_month.php');
+        break;
+
+    case 'vanityhouse':
+        require(__DIR__ . '/misc/vanity_house.php');
+        break;
+
     case 'public_sandbox':
-        include(SERVER_ROOT.'/sections/tools/sandboxes/public_sandbox.php');
+        require(__DIR__ . '/sandboxes/public_sandbox.php');
         break;
 
     case 'mod_sandbox':
         if (check_perms('users_mod')) {
-            include(SERVER_ROOT.'/sections/tools/sandboxes/mod_sandbox.php');
+            require(__DIR__ . '/sandboxes/mod_sandbox.php');
         } else {
             error(403);
         }
         break;
     case 'bbcode_sandbox':
-        include(SERVER_ROOT.'/sections/tools/sandboxes/bbcode_sandbox.php');
+        require(__DIR__ . '/sandboxes/bbcode_sandbox.php');
         break;
     case 'artist_importance_sandbox':
-        include(SERVER_ROOT.'/sections/tools/sandboxes/artist_importance_sandbox.php');
+        require(__DIR__ . '/sandboxes/artist_importance_sandbox.php');
         break;
     case 'db_sandbox':
-        include(SERVER_ROOT.'/sections/tools/sandboxes/db_sandbox.php');
+        require(__DIR__ . '/sandboxes/db_sandbox.php');
         break;
     case 'referral_sandbox':
-        include(SERVER_ROOT.'/sections/tools/sandboxes/referral_sandbox.php');
+        require(__DIR__ . '/sandboxes/referral_sandbox.php');
         break;
-    case 'calendar':
-        include(SERVER_ROOT.'/sections/tools/managers/calendar.php');
-        break;
-    case 'get_calendar_event':
-        include(SERVER_ROOT.'/sections/tools/managers/ajax_get_calendar_event.php');
-        break;
-    case 'take_calendar_event':
-        include(SERVER_ROOT.'/sections/tools/managers/ajax_take_calendar_event.php');
-        break;
-    case 'stylesheets':
-        include(SERVER_ROOT.'/sections/tools/managers/stylesheets_list.php');
-        break;
-    case 'mass_pm':
-        include(SERVER_ROOT.'/sections/tools/managers/mass_pm.php');
-        break;
-    case 'take_mass_pm':
-        include(SERVER_ROOT.'/sections/tools/managers/take_mass_pm.php');
-        break;
-    case 'monthalbum':
-        include(SERVER_ROOT.'/sections/tools/misc/album_of_month.php');
-        break;
-    case 'vanityhouse':
-        include(SERVER_ROOT.'/sections/tools/misc/vanity_house.php');
-        break;
-    case 'dbkey':
-        include(SERVER_ROOT.'/sections/tools/managers/db_key.php');
-        break;
-    case 'navigation_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/navigation_alter.php');
-        break;
-    case 'navigation':
-        include(SERVER_ROOT.'/sections/tools/managers/navigation_list.php');
-        break;
-    case 'forum_transitions':
-        include(SERVER_ROOT.'/sections/tools/managers/forum_transitions_list.php');
-        break;
-    case 'forum_transitions_alter':
-        include(SERVER_ROOT.'/sections/tools/managers/forum_transitions_alter.php');
-        break;
+
     default:
-        include(SERVER_ROOT.'/sections/tools/tools.php');
+        require(__DIR__ . '/tools.php');
 }

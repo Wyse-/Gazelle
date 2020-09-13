@@ -58,30 +58,39 @@ if (empty($Request['ReleaseType'])) {
 //Votes time
 $RequestVotes = Requests::get_votes_array($RequestID);
 $VoteCount = count($RequestVotes['Voters']);
-$UserCanEdit = (!$IsFilled && $LoggedUser['ID'] === $Request['UserID'] && $VoteCount < 2);
+$UserCanEdit = (!$IsFilled && $LoggedUser['ID'] == $Request['UserID'] && $VoteCount < 2);
 $CanEdit = ($UserCanEdit || check_perms('site_moderate_requests'));
 
 // Comments (must be loaded before View::show_header so that subscriptions and quote notifications are handled properly)
 list($NumComments, $Page, $Thread, $LastRead) = Comments::load('requests', $RequestID);
 
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
 View::show_header("View request: $FullName", 'comments,requests,bbcode,subscriptions');
 ?>
 <div class="thin">
     <div class="header">
-        <h2><a href="requests.php">Requests</a> &gt; <?=$CategoryName?> &gt; <?=$DisplayLink?></h2>
+        <h2><a href="requests.php">Requests</a> &rsaquo; <?=$CategoryName?> &rsaquo; <?=$DisplayLink?></h2>
         <div class="linkbox">
 <?php    if ($CanEdit) { ?>
             <a href="requests.php?action=edit&amp;id=<?=$RequestID?>" class="brackets">Edit</a>
-<?php    }
-    if ($UserCanEdit || check_perms('users_mod')) { ?>
+<?php
+    }
+    if (check_perms('site_admin_requests')) { ?>
+            <a href="requests.php?action=edit-bounty&amp;id=<?=$RequestID?>" class="brackets">Edit bounty</a>
+<?php
+    }
+    if ($UserCanEdit || check_perms('site_moderate_requests')) { ?>
             <a href="requests.php?action=delete&amp;id=<?=$RequestID?>" class="brackets">Delete</a>
-<?php    }
-    if (Bookmarks::has_bookmarked('request', $RequestID)) { ?>
+<?php
+    }
+    $bookmark = new \Gazelle\Bookmark;
+    if ($bookmark->isRequestBookmarked($LoggedUser['ID'], $RequestID)) { ?>
             <a href="#" id="bookmarklink_request_<?=$RequestID?>" onclick="Unbookmark('request', <?=$RequestID?>, 'Bookmark'); return false;" class="brackets">Remove bookmark</a>
 <?php    } else { ?>
             <a href="#" id="bookmarklink_request_<?=$RequestID?>" onclick="Bookmark('request', <?=$RequestID?>, 'Remove bookmark'); return false;" class="brackets">Bookmark</a>
 <?php    } ?>
-            <a href="#" id="subscribelink_requests<?=$RequestID?>" class="brackets" onclick="SubscribeComments('requests',<?=$RequestID?>);return false;"><?=Subscriptions::has_subscribed_comments('requests', $RequestID) !== false ? 'Unsubscribe' : 'Subscribe'?></a>
+            <a href="#" id="subscribelink_requests<?=$RequestID?>" class="brackets" onclick="SubscribeComments('requests',<?=$RequestID?>);return false;"><?=
+                $subscription->isSubscribedComments('requests', $RequestID) ? 'Unsubscribe' : 'Subscribe'?></a>
             <a href="reports.php?action=report&amp;type=request&amp;id=<?=$RequestID?>" class="brackets">Report request</a>
 <?php    if (!$IsFilled) { ?>
             <a href="upload.php?requestid=<?=$RequestID?><?=($Request['GroupID'] ? "&amp;groupid=$Request[GroupID]" : '')?>" class="brackets">Upload request</a>

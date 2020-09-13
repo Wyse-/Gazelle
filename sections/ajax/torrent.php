@@ -11,11 +11,13 @@ if ($TorrentID && $TorrentHash) {
     json_die("failure", "bad parameters");
 }
 
+$torMan = new \Gazelle\Manager\Torrent;
+
 if ($TorrentHash) {
-    if (!is_valid_torrenthash($TorrentHash)) {
+    if (!$torMan->isValidHash($TorrentHash)) {
         json_die("failure", "bad hash parameter");
     } else {
-        $TorrentID = (int)torrenthash_to_torrentid($TorrentHash);
+        $TorrentID = $torMan->hashToTorrentId($TorrentHash);
         if (!$TorrentID) {
             json_die("failure", "bad hash parameter");
         }
@@ -26,7 +28,7 @@ if ($TorrentID <= 0) {
     json_die("failure", "bad id parameter");
 }
 
-$TorrentCache = get_torrent_info($TorrentID, true, 0, true, true);
+$TorrentCache = get_torrent_info($TorrentID, 0, true, true);
 
 if (!$TorrentCache) {
     json_die("failure", "bad id parameter");
@@ -44,6 +46,7 @@ $CategoryName = ($TorrentDetails['CategoryID'] == 0)
     ? "Unknown"
     : $Categories[$TorrentDetails['CategoryID'] - 1];
 
+$bookmark = new \Gazelle\Bookmark;
 $JsonTorrentDetails = [
     'wikiBody'        => Text::full_format($TorrentDetails['WikiBody']),
     'wikiImage'       => $TorrentDetails['WikiImage'],
@@ -57,7 +60,7 @@ $JsonTorrentDetails = [
     'categoryName'    => $CategoryName,
     'time'            => $TorrentDetails['Time'],
     'vanityHouse'     => $TorrentDetails['VanityHouse'] == 1,
-    'isBookmarked'    => Bookmarks::has_bookmarked('torrent', $GroupID),
+    'isBookmarked'    => $bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID),
     'tags'            => explode('|', $TorrentDetails['tagNames']),
     'musicInfo'       => ($CategoryName != "Music")
         ? null : Artists::get_artist_by_type($GroupID),

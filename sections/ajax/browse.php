@@ -30,7 +30,7 @@ if ($NumResults == 0) {
     ]);
 }
 
-$Bookmarks = Bookmarks::all_bookmarks('torrent');
+$bookmark = new \Gazelle\Bookmark;
 
 $JsonGroups = [];
 foreach ($Results as $Key => $GroupID) {
@@ -180,7 +180,7 @@ foreach ($Results as $Key => $GroupID) {
             'artist' => $DisplayName,
             'cover' => $GroupInfo['WikiImage'],
             'tags' => $TagList,
-            'bookmarked' => in_array($GroupID, $Bookmarks),
+            'bookmarked' => $bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID),
             'vanityHouse' => $GroupInfo['VanityHouse'] == '1',
             'groupYear' => (int)$GroupYear,
             'releaseType' => $ReleaseTypes[$ReleaseType],
@@ -216,7 +216,9 @@ foreach ($Results as $Key => $GroupID) {
         ];
     }
 }
+
 json_print('success', [
     'currentPage' => intval($Page),
     'pages' => ceil($NumResults / TORRENTS_PER_PAGE),
-    'results' => $JsonGroups]);
+    'results' => $JsonGroups
+]);

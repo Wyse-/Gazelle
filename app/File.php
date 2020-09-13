@@ -2,35 +2,56 @@
 
 namespace Gazelle;
 
-abstract class File {
-    /** @var \DB_MYSQL */
-    protected $db;
+abstract class File extends Base {
 
-    /** @var \CACHE */
-    protected $cache;
-
-    public function __construct (\DB_MYSQL $db, \CACHE $cache) {
-        $this->db = $db;
-        $this->cache = $cache;
+    /**
+     * Store a file on disk at the specified path.
+     *
+     * @param string $source The contents of the file
+     * @param integer|array $id The unique identifier of the object
+     * @return boolean Success of the operation
+     */
+    public function put(string $source, $id) {
+        return file_put_contents($this->path($id), $source);
     }
 
-    public function put ($source, $id) {
-        return copy($source, $this->path($id));
-    }
-
-    public function exists ($id) {
+    /**
+     * Does the file exist?
+     *
+     * @param integer|array $id The unique identifier of the object
+     * @return boolean Existence
+     */
+    public function exists($id) {
         return file_exists($this->path($id));
     }
 
-    public function get ($id) {
+    /**
+     * Retrieve the contents of the stored file.
+     *
+     * @param integer|array $id The unique identifier of the object
+     * @return string File contents
+     */
+    public function get($id) {
         return file_get_contents($this->path($id));
     }
 
-    public function remove ($id) {
-        unlink($this->path($id));
+    /**
+     * Remove the stored file.
+     *
+     * @param integer|array $id The unique identifier of the object
+     * @return boolean Success of unlink operation
+     */
+    public function remove(/* mixed */ $id) {
+        return @unlink($this->path($id));
     }
 
-    public function path ($id) {
+    /**
+     * Path of stored file
+     *
+     * @param integer|array $id The unique identifier of the object
+     * @return string Fully qualified filename of object
+     */
+    public function path(/* mixed */ $id) {
         return "/tmp/$id";
     }
 }

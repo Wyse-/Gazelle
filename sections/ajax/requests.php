@@ -206,7 +206,7 @@ if (!isset($_GET['tags_type']) || $_GET['tags_type'] === '1') {
 }
 if (!empty($_GET['tags'])) {
     $SearchTags = ['include' => [], 'exclude' => []];
-    $Tags = explode(',', $_GET['tags']);
+    $Tags = explode(',', str_replace('.', '_', $_GET['tags']));
     foreach ($Tags as $Tag) {
         $Tag = trim($Tag);
         if ($Tag[0] === '!' && strlen($Tag) >= 2) {
@@ -328,7 +328,6 @@ if ($NumResults == 0) {
     ]);
 } else {
     $JsonResults = [];
-    $TimeCompare = 1267643718; // Requests v2 was implemented 2010-03-03 20:15:18
     $Requests = Requests::get_requests(array_keys($SphRequests));
     foreach ($SphRequests as $RequestID => $SphRequest) {
         $Request = $Requests[$RequestID];
@@ -369,9 +368,9 @@ if ($NumResults == 0) {
             'recordLabel' => $Request['RecordLabel'],
             'catalogueNumber' => $Request['CatalogueNumber'],
             'releaseType' => $ReleaseTypes[$Request['ReleaseType']],
-            'bitrateList' => $Request['BitrateList'],
-            'formatList' => $Request['FormatList'],
-            'mediaList' => $Request['MediaList'],
+            'bitrateList' => preg_split('/\|/', $Request['BitrateList'], null, PREG_SPLIT_NO_EMPTY),
+            'formatList' => preg_split('/\|/', $Request['FormatList'], null, PREG_SPLIT_NO_EMPTY),
+            'mediaList' => preg_split('/\|/', $Request['MediaList'], null, PREG_SPLIT_NO_EMPTY),
             'logCue' => $Request['LogCue'],
             'isFilled' => ($Request['TorrentID'] > 0),
             'fillerId' => (int)$Request['FillerID'],
@@ -387,4 +386,3 @@ if ($NumResults == 0) {
         'results' => $JsonResults
     ]);
 }
-?>

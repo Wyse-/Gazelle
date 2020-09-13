@@ -10,7 +10,8 @@ $CollageData = $Cache->get_value($CacheKey);
 if ($CollageData) {
     list($Name, $Description, $CommentList, $Deleted, $CollageCategoryID, $CreatorID, $Locked, $MaxGroups, $MaxGroupsPerUser, $Updated, $Subscribers) = $CollageData;
 } else {
-    $DB->query("
+    list($Name, $Description, $CreatorID, $Deleted, $CollageCategoryID, $Locked, $MaxGroups, $MaxGroupsPerUser, $Updated, $Subscribers)
+    = $DB->row("
         SELECT
             Name,
             Description,
@@ -23,22 +24,26 @@ if ($CollageData) {
             Updated,
             Subscribers
         FROM collages
-        WHERE ID = '$CollageID'");
-    if (!$DB->has_results()) {
+        WHERE ID = ?
+        ", $CollageID
+    );
+    if (!$Name) {
         json_die("failure");
     }
-    list($Name, $Description, $CreatorID, $Deleted, $CollageCategoryID, $Locked, $MaxGroups, $MaxGroupsPerUser, $Updated, $Subscribers) = $DB->next_record(MYSQLI_NUM);
     $CommentList = null;
     $SetCache = true;
 }
 
 // TODO: Cache this
-$DB->query("
+$DB->prepared_query("
     SELECT GroupID
     FROM collages_torrents
-    WHERE CollageID = $CollageID");
+    WHERE CollageID = ?
+    ", $CollageID
+);
 $TorrentGroups = $DB->collect('GroupID');
 
+$bookmark = new \Gazelle\Bookmark;
 $JSON = [
     'id'                  => (int)$CollageID,
     'name'                => $Name,
@@ -50,7 +55,7 @@ $JSON = [
     'locked'              => (bool)$Locked,
     'maxGroups'           => (int)$MaxGroups,
     'maxGroupsPerUser'    => (int)$MaxGroupsPerUser,
-    'hasBookmarked'       => Bookmarks::has_bookmarked('collage', $CollageID),
+    'hasBookmarked'       => $bookmark->isCollageBookmarked($LoggedUser['ID'], $CollageID),
     'subscriberCount'     => (int)$Subscribers,
     'torrentGroupIDList'  => $TorrentGroups
 ];
@@ -58,13 +63,15 @@ $JSON = [
 if ($CollageCategoryID != array_search(ARTIST_COLLAGE, $CollageCats)) {
     // torrent collage
     $TorrentGroups = [];
-    $DB->query("
+    $DB->prepared_query("
         SELECT
             ct.GroupID
         FROM collages_torrents AS ct
-            JOIN torrents_group AS tg ON tg.ID = ct.GroupID
-        WHERE ct.CollageID = '$CollageID'
-        ORDER BY ct.Sort");
+        INNER JOIN torrents_group AS tg ON (tg.ID = ct.GroupID)
+        WHERE ct.CollageID = ?
+        ORDER BY ct.Sort
+        ", $CollageID
+    );
     $GroupIDs = $DB->collect('GroupID');
     $GroupList = Torrents::get_groups($GroupIDs);
     foreach ($GroupIDs as $GroupID) {
@@ -120,16 +127,18 @@ if ($CollageCategoryID != array_search(ARTIST_COLLAGE, $CollageCats)) {
     $JSON['torrentgroups'] = $TorrentGroups;
 } else {
     // artist collage
-    $DB->query("
+    $DB->prepared_query("
         SELECT
             ca.ArtistID,
             ag.Name,
             aw.Image
         FROM collages_artists AS ca
-            JOIN artists_group AS ag ON ag.ArtistID=ca.ArtistID
-            LEFT JOIN wiki_artists AS aw ON aw.RevisionID = ag.RevisionID
-        WHERE ca.CollageID='$CollageID'
-        ORDER BY ca.Sort");
+        INNER JOIN artists_group AS ag ON (ag.ArtistID = ca.ArtistID)
+        LEFT JOIN wiki_artists AS aw ON (aw.RevisionID = ag.RevisionID)
+        WHERE ca.CollageID = ?
+        ORDER BY ca.Sort
+        ", $CollageID
+    );
     $Artists = [];
     while (list($ArtistID, $ArtistName, $ArtistImage) = $DB->next_record()) {
         $Artists[] = [

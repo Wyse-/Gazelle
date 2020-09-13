@@ -14,24 +14,27 @@ function confirmDelete(id) {
     <div class="header">
         <div class="linkbox">
             <a href="tools.php?action=permissions&amp;id=new" class="brackets">Create a new permission set</a>
+            <a href="tools.php?action=privilege_matrix" class="brackets">Privilege Matrix</a>
             <a href="tools.php" class="brackets">Back to tools</a>
         </div>
     </div>
 <?php
-$DB->query("
+$DB->prepared_query("
     SELECT
         p.ID,
         p.Name,
         p.Level,
         p.Secondary,
-        COUNT(u.ID) + COUNT(DISTINCT l.UserID)
+        count(u.ID) + count(DISTINCT l.UserID)
     FROM permissions AS p
-        LEFT JOIN users_main AS u ON u.PermissionID = p.ID
-        LEFT JOIN users_levels AS l ON l.PermissionID = p.ID
+    LEFT JOIN users_main AS u ON (u.PermissionID = p.ID)
+    LEFT JOIN users_levels AS l ON (l.PermissionID = p.ID)
     GROUP BY p.ID
-    ORDER BY p.Secondary ASC, p.Level ASC");
-if ($DB->has_results()) {
-?>
+    ORDER BY p.Secondary ASC, p.Level ASC
+");
+if (!$DB->has_results()) { ?>
+    <h2 align="center">There are no permission classes.</h2>
+<?php } else { ?>
     <table width="100%">
         <tr class="colhead">
             <td>Name</td>
@@ -40,28 +43,28 @@ if ($DB->has_results()) {
             <td class="center">Actions</td>
         </tr>
 <?php
-    while (list($ID, $Name, $Level, $Secondary, $UserCount) = $DB->next_record()) {
-        $part = $Secondary ? 'secclass' : 'class';
-        $link = "user.php?action=search&{$part}={$ID}";
+    while (list($id, $name, $level, $secondary, $userCount) = $DB->next_record()) {
+        $part = $secondary ? 'secclass' : 'class[]';
+        $link = "user.php?action=search&{$part}={$id}";
 ?>
         <tr>
-            <td><?=display_str($Name); ?></td>
-            <td><?=($Secondary ? 'Secondary' : $Level) ?></td>
-            <td><a href="<?=$link; ?>"><?=number_format($UserCount); ?></a></td>
+            <td><a href="<?=$link?>"><?=display_str($name)?></a></td>
+            <td><?=($secondary ? 'Secondary' : $level)?></td>
+            <td><a href="<?=$link?>"><?=number_format($userCount)?></a></td>
             <td class="center">
-                <a href="tools.php?action=permissions&amp;id=<?=$ID ?>" class="brackets">Edit</a>
-                <a href="#" onclick="return confirmDelete(<?=$ID?>);" class="brackets">Remove</a>
+                <a href="tools.php?action=permissions&amp;id=<?=$id?>" class="brackets">Edit</a>
+<?php
+        if (!$userCount) {
+?>
+                <a href="#" onclick="return confirmDelete(<?=$id?>);" class="brackets">Remove</a>
+<?php
+        }
+?>
             </td>
         </tr>
-<?php
-    } ?>
+<?php } ?>
     </table>
-<?php
-} else { ?>
-    <h2 align="center">There are no permission classes.</h2>
-<?php
-} ?>
+<?php } ?>
 </div>
 <?php
 View::show_footer();
-?>

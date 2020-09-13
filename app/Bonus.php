@@ -2,22 +2,15 @@
 
 namespace Gazelle;
 
-class Bonus {
-    private $items;
-    /** @var \DB_MYSQL */
-    private $db;
-    /** @var \CACHE */
-    private $cache;
-
+class Bonus extends Base {
     const CACHE_ITEM = 'bonus_item';
     const CACHE_OPEN_POOL = 'bonus_pool';
     const CACHE_SUMMARY = 'bonus_summary.';
     const CACHE_HISTORY = 'bonus_history.';
     const CACHE_POOL_HISTORY = 'bonus_pool_history.';
 
-    public function __construct(\DB_MYSQL $db, \CACHE $cache) {
-        $this->db = $db;
-        $this->cache = $cache;
+    public function __construct() {
+        parent::__construct();
         $this->items = $this->cache->get_value(self::CACHE_ITEM);
         if ($this->items === false) {
             $this->db->query("
@@ -111,7 +104,7 @@ class Bonus {
         if (!$this->removePoints($fromID, $price)) {
             return false;
         }
-        $pool = new \Gazelle\BonusPool($this->db, $this->cache, $poolId);
+        $pool = new \Gazelle\BonusPool($poolId);
         $pool->contribute($userId, $value, $taxedValue);
 
         $this->cache->deleteMulti([
@@ -203,6 +196,9 @@ class Bonus {
     public function purchaseTitle($userId, $label, $title, $effectiveClass) {
         $item  = $this->items[$label];
         $title = $label === 'title-bb-y' ? \Text::full_format($title) : \Text::strip_bbcode($title);
+        if (mb_strlen($title) > 1024) {
+            throw new \Exception('Bonus:title:too-long');
+        }
         $price = $this->getEffectivePrice($label, $effectiveClass);
 
         /* if the price is 0, nothing changes so avoid hitting the db */
@@ -229,16 +225,14 @@ class Bonus {
         $price  = $item['Price'];
         $this->db->prepared_query('
             UPDATE user_bonus ub
-            INNER JOIN users_main um ON (um.ID = ub.user_id)
             INNER JOIN user_flt uf USING (user_id) SET
                 ub.points = ub.points - ?,
-                um.FLTokens = um.FLTokens + ?,
                 uf.tokens = uf.tokens + ?
             WHERE ub.user_id = ?
                 AND ub.points >= ?
-            ', $price, $amount, $amount, $userId, $price
+            ', $price, $amount, $userId, $price
         );
-        if ($this->db->affected_rows() != 2 + 1) {
+        if ($this->db->affected_rows() != 2) {
             throw new \Exception('Bonus:selfToken:funds');
         }
         $this->addPurchaseHistory($item['ID'], $userId, $price);
@@ -271,16 +265,15 @@ class Bonus {
                 )
             SET
                 ub.points = ub.points - ?,
-                other.FLTokens = other.FLTokens + ?,
                 other_uf.tokens = other_uf.tokens + ?
             WHERE noFL.UserID IS NULL
                 AND other.Enabled = '1'
                 AND other.ID = ?
                 AND self.ID = ?
                 AND ub.points >= ?
-            ", $price, $amount, $amount, $toID, $fromID, $price
+            ", $price, $amount, $toID, $fromID, $price
         );
-        if ($this->db->affected_rows() != 2 + 1) {
+        if ($this->db->affected_rows() != 2) {
             throw new \Exception('Bonus:otherToken:no-gift-funds');
         }
         $this->addPurchaseHistory($item['ID'], $fromID, $price, $toID);
@@ -336,23 +329,22 @@ class Bonus {
         $this->flushUserCache($userId);
     }
 
-    public function addGlobalPoints($points) {
-        $this->db->prepared_query("
-            INSERT INTO user_bonus
-            SELECT um.ID, ?
-            FROM users_main um
-            INNER JOIN users_info ui ON (ui.UserID = um.ID)
-            LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
-            LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = 'no-fl-gifts')
-            WHERE ui.DisablePoints = '0'
-                AND um.Enabled = '1'
-                AND uhafl.UserID IS NULL
-            ON DUPLICATE KEY UPDATE points = points + ?
-            ", $points, $points
-        );
+    public function addMultiPoints(int $points, array $ids = []): int {
+        if ($ids) {
+            $this->db->prepared_query("
+                UPDATE user_bonus SET
+                    points = points + ?
+                WHERE user_id in (" . placeholders($ids) . ")
+                ", $points, ...$ids
+            );
+            $this->cache->deleteMulti(array_map(function ($k) { return "user_stats_$k"; }, $ids));
+        }
+        return count($ids);
+    }
 
+    public function addGlobalPoints(int $points): int {
         $this->db->prepared_query("
-            SELECT concat('user_stats_', um.ID) as ck
+            SELECT um.ID
             FROM users_main um
             INNER JOIN users_info ui ON (ui.UserID = um.ID)
             LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
@@ -361,12 +353,57 @@ class Bonus {
                 AND um.Enabled = '1'
                 AND uhafl.UserID IS NULL
         ");
-        if ($this->db->has_results()) {
-            $keys = $this->db->collect('ck', false);
-            $this->cache->deleteMulti($keys);
-            return count($keys);
-        }
-        return 0;
+        return $this->addMultiPoints($points, $this->db->collect('ID', false));
+    }
+
+    public function addActivePoints(int $points, string $since): int {
+        $this->db->prepared_query("
+            SELECT um.ID
+            FROM users_main um
+            INNER JOIN users_info ui ON (ui.UserID = um.ID)
+            INNER JOIN user_last_access ula ON (ula.user_id = um.ID)
+            LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
+            LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = 'no-fl-gifts')
+            WHERE ui.DisablePoints = '0'
+                AND um.Enabled = '1'
+                AND uhafl.UserID IS NULL
+                AND ula.last_access >= ?
+            ", $since
+        );
+        return $this->addMultiPoints($points, $this->db->collect('ID', false));
+    }
+
+    public function addUploadPoints(int $points, string $since): int {
+        $this->db->prepared_query($sql = "
+            SELECT DISTINCT um.ID
+            FROM users_main um
+            INNER JOIN users_info ui ON (ui.UserID = um.ID)
+            INNER JOIN torrents t ON (t.UserID = um.ID)
+            LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
+            LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = 'no-fl-gifts')
+            WHERE ui.DisablePoints = '0'
+                AND um.Enabled = '1'
+                AND uhafl.UserID IS NULL
+                AND t.Time >= ?
+            ", $since
+        );
+        return $this->addMultiPoints($points, $this->db->collect('ID', false));
+    }
+
+    public function addSeedPoints(int $points): int {
+        $this->db->prepared_query("
+            SELECT DISTINCT um.ID
+            FROM users_main um
+            INNER JOIN users_info ui ON (ui.UserID = um.ID)
+            INNER JOIN xbt_files_users xfu ON (xfu.uid = um.ID)
+            LEFT JOIN user_has_attr AS uhafl ON (uhafl.UserID = um.ID)
+            LEFT JOIN user_attr as uafl ON (uafl.ID = uhafl.UserAttrID AND uafl.Name = 'no-fl-gifts')
+            WHERE ui.DisablePoints = '0'
+                AND um.Enabled = '1'
+                AND uhafl.UserID IS NULL
+                AND xfu.active = 1 and xfu.remaining = 0 and xfu.connectable = 1 and timespent > 0
+        ");
+        return $this->addMultiPoints($points, $this->db->collect('ID', false));
     }
 
     public function removePointsForUpload($userId, array $torrentDetails) {
@@ -414,9 +451,15 @@ class Bonus {
     public function userTotals($userId) {
         $this->db->prepared_query("
             SELECT
-                COUNT(xfu.uid) as TotalTorrents,
-                SUM(t.Size) as TotalSize,
-                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime, tls.Seeders)), 0) AS TotalHourlyPoints
+                count(xfu.uid) as TotalTorrents,
+                sum(t.Size) as TotalSize,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime,                           tls.Seeders)), 0)                           AS HourlyPoints,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime + (24 * 1),                tls.Seeders)), 0) * (24 * 1)                AS DailyPoints,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime + (24 * 7),                tls.Seeders)), 0) * (24 * 7)                AS WeeklyPoints,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004/12), tls.Seeders)), 0) * (24 * 365.256363004/12) AS MonthlyPoints,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004),    tls.Seeders)), 0) * (24 * 365.256363004)    AS YearlyPoints,
+                coalesce(sum(bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004),    tls.Seeders)), 0) * (24 * 365.256363004)
+                    / (coalesce(sum(t.Size), 1) / (1024*1024*1024)) AS PointsPerGB
             FROM (
                 SELECT DISTINCT uid,fid FROM xbt_files_users WHERE active=1 AND remaining=0 AND mtime > unix_timestamp(NOW() - INTERVAL 1 HOUR) AND uid = ?
             ) AS xfu
@@ -427,8 +470,8 @@ class Bonus {
                 xfu.uid = ?
             ", $userId, $userId
         );
-        list($total, $size, $hourly) = $this->db->next_record();
-        return [intval($total), floatval($size), floatval($hourly)];
+        list($total, $size, $hourly, $daily, $weekly, $monthly, $yearly, $ppGB) = $this->db->next_record(MYSQLI_NUM);
+        return [(int)$total, (float)$size, (float)$hourly, (float)$daily, (float)$weekly, (float)$monthly, (float)$yearly, (float)$ppGB];
     }
 
     public function userDetails($userId, $orderBy, $orderWay, $limit, $offset) {
@@ -450,10 +493,13 @@ class Bonus {
                 t.RemasterTitle,
                 GREATEST(tls.Seeders, 1) AS Seeders,
                 xfh.seedtime AS Seedtime,
-                bonus_accrual(t.Size, xfh.seedtime,                      tls.Seeders) AS HourlyPoints,
-                bonus_accrual(t.Size, xfh.seedtime + 1,                  tls.Seeders) * 12 AS DailyPoints,
-                bonus_accrual(t.Size, xfh.seedtime + 365.256363004 / 12, tls.Seeders) * 365.256363004 / 12 AS MonthlyPoints,
-                bonus_accrual(t.Size, xfh.seedtime + 365.256363004,      tls.Seeders) * 365.256363004 AS YearlyPoints
+                bonus_accrual(t.Size, xfh.seedtime,                           tls.Seeders)                           AS HourlyPoints,
+                bonus_accrual(t.Size, xfh.seedtime + (24 * 1),                tls.Seeders) * (24 * 1)                AS DailyPoints,
+                bonus_accrual(t.Size, xfh.seedtime + (24 * 7),                tls.Seeders) * (24 * 7)                AS WeeklyPoints,
+                bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004/12), tls.Seeders) * (24 * 365.256363004/12) AS MonthlyPoints,
+                bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004),    tls.Seeders) * (24 * 365.256363004)    AS YearlyPoints,
+                bonus_accrual(t.Size, xfh.seedtime + (24 * 365.256363004),    tls.Seeders) * (24 * 365.256363004)
+                    / (t.Size / (1024*1024*1024)) AS PointsPerGB
             FROM (
                 SELECT DISTINCT uid,fid FROM xbt_files_users WHERE active=1 AND remaining=0 AND mtime > unix_timestamp(NOW() - INTERVAL 1 HOUR) AND uid = ?
             ) AS xfu

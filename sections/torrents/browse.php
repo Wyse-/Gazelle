@@ -2,8 +2,6 @@
 
 use Gazelle\Util\SortableTableHeader;
 
-include(SERVER_ROOT . '/sections/torrents/functions.php');
-
 $SortOrderMap = [];
 foreach (TorrentSearch::$SortOrders as $key => $val) {
     $SortOrderMap[$key] = [$key, 'desc'];
@@ -21,14 +19,10 @@ if (!empty($SortOrderMap[$SortOrder][1])) {
 if (!empty($_GET['searchstr']) || !empty($_GET['groupname'])) {
     $InfoHash = (!empty($_GET['searchstr'])) ? $_GET['searchstr'] : $_GET['groupname'];
 
+    $torMan = new \Gazelle\Manager\Torrent;
     // Search by infohash
-    if ($InfoHash = is_valid_torrenthash($InfoHash)) {
-        $DB->prepared_query("
-            SELECT ID, GroupID
-            FROM torrents
-            WHERE info_hash = UNHEX(?)", $InfoHash);
-        if ($DB->has_results()) {
-            list($ID, $GroupID) = $DB->next_record();
+    if ($InfoHash = $torMan->isValidHash($InfoHash)) {
+        if (list($ID, $GroupID) = $torMan->hashToTorrentGroup($InfoHash)) {
             header("Location: torrents.php?id=$GroupID&torrentid=$ID");
             die();
         }
@@ -90,7 +84,7 @@ if (!empty($_GET['setdefault'])) {
 if (isset($_GET['searchsubmit'])) {
     $GroupResults = !empty($_GET['group_results']);
 } else {
-    $GroupResults = !$LoggedUser['DisableGrouping2'];
+    $GroupResults = !$LoggedUser['TorrentGrouping'];
 }
 
 $Page = !empty($_GET['page']) ? (int) $_GET['page'] : 1;
@@ -465,7 +459,7 @@ die();
 // List of pages
 $Pages = Format::get_pages($Page, $NumResults, TORRENTS_PER_PAGE);
 
-$Bookmarks = Bookmarks::all_bookmarks('torrent');
+$bookmark = new \Gazelle\Bookmark;
 
 $header = new SortableTableHeader([
     'year' => 'Year',
@@ -574,7 +568,7 @@ $ShowGroups = !(!empty($LoggedUser['TorrentGrouping']) && $LoggedUser['TorrentGr
 <?php    } ?>
             <div class="group_info clear">
                 <?=$DisplayName?>
-<?php    if (in_array($GroupID, $Bookmarks)) { ?>
+<?php    if ($bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID)) { ?>
                 <span class="remove_bookmark float_right">
                     <a href="#" id="bookmarklink_torrent_<?=$GroupID?>" class="brackets" onclick="Unbookmark('torrent', <?=$GroupID?>, 'Bookmark'); return false;">Remove bookmark</a>
                 </span>

@@ -18,7 +18,7 @@ if (empty($_GET['revisionid'])) {
 //----------------- Build list and get stats
 
 try {
-    $Artist = new \Gazelle\Artist($DB, $Cache, $ArtistID, $RevisionID);
+    $Artist = new \Gazelle\Artist($ArtistID, $RevisionID);
 }
 catch (\Exception $e) {
     error(404);
@@ -67,9 +67,9 @@ function torrentEdition($title, $year, $recordLabel, $catlogueNumber, $media) {
     return implode('::', [$title, $year, $recordLabel, $catlogueNumber, $media]);
 }
 
-$User = new \Gazelle\User($DB, $Cache, $LoggedUser['ID']);
+$User = new \Gazelle\User($LoggedUser['ID']);
 
-View::show_header($Artist->name(), 'browse,requests,bbcode,comments,voting,recommend,subscriptions');
+View::show_header($Artist->name(), 'browse,requests,bbcode,comments,voting,subscriptions');
 ?>
 <div class="thin">
     <div class="header">
@@ -94,12 +94,16 @@ if (check_perms('site_torrents_notify')) {
     }
 }
 
-if (Bookmarks::has_bookmarked('artist', $ArtistID)) { ?>
+$bookmark = new \Gazelle\Bookmark;
+if ($bookmark->isArtistBookmarked($LoggedUser['ID'], $ArtistID)) { ?>
             <a href="#" id="bookmarklink_artist_<?= $ArtistID ?>" onclick="Unbookmark('artist', <?= $ArtistID ?>, 'Bookmark'); return false;" class="brackets">Remove bookmark</a>
 <?php } else { ?>
             <a href="#" id="bookmarklink_artist_<?= $ArtistID ?>" onclick="Bookmark('artist', <?= $ArtistID ?>, 'Remove bookmark'); return false;" class="brackets">Bookmark</a>
 <?php } ?>
-            <a href="#" id="subscribelink_artist<?= $ArtistID ?>" class="brackets" onclick="SubscribeComments('artist', <?= $ArtistID ?>);return false;"><?=Subscriptions::has_subscribed_comments('artist', $ArtistID) !== false ? 'Unsubscribe' : 'Subscribe'?></a>
+            <a href="#" id="subscribelink_artist<?= $ArtistID ?>" class="brackets" onclick="SubscribeComments('artist', <?= $ArtistID ?>);return false;">
+<?php
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
+echo $subscription->isSubscribedComments('artist', $ArtistID) !== false ? 'Unsubscribe' : 'Subscribe'?></a>
 <?php
 
 if (check_perms('site_edit_wiki')) { ?>
@@ -144,7 +148,7 @@ if ($Artist->image()) { ?>
                         <input type="hidden" name="artistname" value="<?= $Artist->name() ?>" />
                         <input type="hidden" name="action" value="advanced" />
                         <input type="text" autocomplete="off" id="filelist" name="filelist" size="20" />
-                        <input type="submit" value="&gt;" />
+                        <input type="submit" value="&rsaquo;" />
                     </form>
                 </li>
             </ul>
@@ -215,7 +219,12 @@ foreach ($ZIPOptions as $Option) {
             <div class="head"><strong>Tags</strong></div>
             <ul class="stats nobullet">
 <?php
+$artistReleaseType = [];
 foreach ($Artist->sections() as $section => $Groups) {
+    if (!isset($artistReleaseType[$section])) {
+        $artistReleaseType[$section] = 0;
+    }
+    $artistReleaseType[$section]++;
     foreach ($Groups as $Group) {
         // Skip compilations and soundtracks.
         if ($Group['ReleaseType'] != 7 && $Group['ReleaseType'] != 3) {
@@ -236,6 +245,17 @@ Tags::reset();
                 <li>Number of seeders: <?=number_format($Artist->nrSeeders())?></li>
                 <li>Number of leechers: <?=number_format($Artist->nrLeechers())?></li>
                 <li>Number of snatches: <?=number_format($Artist->nrSnatches())?></li>
+            </ul>
+        </div>
+        <div class="box box_info box_metadata_artist">
+            <div class="head"><strong>Metadata</strong></div>
+            <ul class="stats nobullet">
+                <li>Discogs ID: <?= $Artist->discogsId() ?: '<i>not set</i>' ?></li>
+<?php if ($Artist->discogsId()) { ?>
+                <li>Name: <?= $Artist->discogsName() ?><?= $Artist->discogsIsPreferred()
+                    ? '<span title="This artist does not need to display a sequence number for disambiguation">' . " \xE2\x98\x85</span>" : '' ?></li>
+                <li><span title="Artists having the same name">Synonyms: <?= $Artist->homonymCount() - 1 ?></span></li>
+<?php } ?>
             </ul>
         </div>
         <div class="box box_artists">
@@ -296,9 +316,14 @@ if ($sections = $Artist->sections()) {
     if (isset($LoggedUser['SortHide'])) {
         $reorderedSections = [];
         foreach (array_keys($LoggedUser['SortHide']) as $reltype) {
-            if (array_key_exists($reltype, $sections)) {
+            if (isset($artistReleaseType[$reltype])) {
                 $reorderedSections[$reltype] = $sections[$reltype];
+                unset($artistReleaseType[$reltype]);
             }
+        }
+        /* Any left-over release types */
+        foreach (array_keys($artistReleaseType) as $reltype) {
+            $reorderedSections[$reltype] = $sections[$reltype];
         }
         $sections = $reorderedSections;
     }
@@ -412,8 +437,7 @@ if ($sections = $Artist->sections()) {
         } ?>
                         <div class="group_info clear">
                             <strong><?=$DisplayName?></strong>
-<?php
-        if (Bookmarks::has_bookmarked('torrent', $GroupID)) { ?>
+<?php if ($bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID)) { ?>
                             <span class="remove_bookmark float_right">
                                 <a style="float: right;" href="#" id="bookmarklink_torrent_<?=$GroupID?>" class="brackets" onclick="Unbookmark('torrent', <?=$GroupID?>, 'Bookmark'); return false;">Remove bookmark</a>
                             </span>
@@ -437,6 +461,7 @@ if ($sections = $Artist->sections()) {
         $SnatchedGroupClass = ($Group['Flags']['IsSnatched'] ? ' snatched_group' : '');
         $prevEdition = torrentEdition('', '-', '', '', '');
         $EditionID = 0;
+        $UnknownCounter = 0;
 
         foreach ($Torrents as $TorrentID => $Torrent) {
             $torrentEdition = torrentEdition(
@@ -444,10 +469,10 @@ if ($sections = $Artist->sections()) {
                 $Torrent['RemasterCatalogueNumber'], $Torrent['Media']
             );
             if ($Torrent['Remastered'] && !$Torrent['RemasterYear']) {
-                $FirstUnknown = !isset($FirstUnknown);
+                $UnknownCounter++;
             }
 
-            if ($prevEdition != $torrentEdition) {
+            if ($prevEdition != $torrentEdition || $UnknownCounter === 1) {
                 $EditionID++;
 ?>
         <tr class="releases_<?= $section ?> groupid_<?=$GroupID?> edition group_torrent discog<?=$SnatchedGroupClass . $groupsHidden ?>">

@@ -1,24 +1,21 @@
 <?php
+
+use \Gazelle\Manager\Notification;
+
 authorize();
 
-if (!empty($_REQUEST['userid'])) {
-    $UserID = $_REQUEST['userid'];
-}
-else {
-    $UserID = $LoggedUser['ID'];
-}
-
-if (!is_number($UserID)) {
+$UserID = empty($_REQUEST['userid']) ? $LoggedUser['ID'] : (int)$_REQUEST['userid'];
+if ($UserID < 1) {
     error(404);
 }
+$donorMan = new Gazelle\Manager\Donation;
 
 //For this entire page, we should generally be using $UserID not $LoggedUser['ID'] and $U[] not $LoggedUser[]
 $U = Users::user_info($UserID);
-$UH = Users::user_heavy_info($UserID);
-
 if (!$U) {
     error(404);
 }
+$UH = Users::user_heavy_info($UserID);
 
 $Permissions = Permissions::get_permissions($U['PermissionID']);
 if ($UserID != $LoggedUser['ID'] && !check_perms('users_edit_profiles', $Permissions['Class'])) {
@@ -28,11 +25,7 @@ if ($UserID != $LoggedUser['ID'] && !check_perms('users_edit_profiles', $Permiss
 
 $Val->SetFields('stylesheet', 1, "number", "You forgot to select a stylesheet.");
 $Val->SetFields('styleurl', 0, "regex", "You did not enter a valid stylesheet URL.", ['regex' => '/^'.CSS_REGEX.'$/i']);
-// The next two are commented out because the drop-down menus were replaced with a check box and radio buttons
-//$Val->SetFields('disablegrouping', 0, "number", "You forgot to select your torrent grouping option.");
-//$Val->SetFields('torrentgrouping', 0, "number", "You forgot to select your torrent grouping option.");
 $Val->SetFields('postsperpage', 1, "number", "You forgot to select your posts per page option.", ['inarray' => [25, 50, 100]]);
-//$Val->SetFields('hidecollage', 1, "number", "You forgot to select your collage option.", array('minlength' => 0, 'maxlength' => 1));
 $Val->SetFields('collagecovers', 1, "number", "You forgot to select your collage option.");
 $Val->SetFields('avatar', 0, "regex", "You did not enter a valid avatar URL.", ['regex' => "/^".IMAGE_REGEX."$/i"]);
 $Val->SetFields('email', 1, "email", "You did not enter a valid email address.");
@@ -130,13 +123,12 @@ if (!isset($_POST['p_donor_heart'])) {
 }
 
 if (isset($_POST['p_donor_stats'])) {
-    Donations::show_stats($UserID);
+    $donorMan->show($UserID);
 } else {
-    Donations::hide_stats($UserID);
+    $donorMan->hide($UserID);
 }
 
 // End building $Paranoia
-
 
 // Email change
 $DB->prepared_query('
@@ -326,8 +318,11 @@ if ($DB->has_results()) {
 G::$Cache->delete_value("lastfm_username_$UserID");
 
 Users::toggleAcceptFL($UserID, $Options['AcceptFL']);
-Donations::update_rewards($UserID);
-NotificationsManager::save_settings($UserID);
+$donorMan->updateReward($UserID);
+$notification = new Notification($UserID);
+// A little cheat technique, gets all keys in the $_POST array starting with 'notifications_'
+$settings = array_intersect_key($_POST, array_flip(preg_grep('/^notifications_/', array_keys($_POST))));
+$notification->save($settings, ["PushKey" => $_POST['pushkey']], (int)$_POST['pushservice'], $_POST['pushdevice']);
 
 // Information on how the user likes to download torrents is stored in cache
 if ($DownloadAlt != $UH['DownloadAlt'] || $Options['HttpsTracker'] != $UH['HttpsTracker']) {
@@ -407,7 +402,7 @@ if ($ResetPassword) {
 if (isset($_POST['resetpasskey'])) {
     $UserInfo = Users::user_heavy_info($UserID);
     $OldPassKey = $UserInfo['torrent_pass'];
-    $NewPassKey = Users::make_secret();
+    $NewPassKey = randomString();
     $ChangerIP = $LoggedUser['IP'];
     $SQL .= ',m.torrent_pass = ?';
     $Params[] = $NewPassKey;

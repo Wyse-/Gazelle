@@ -20,6 +20,7 @@ define('REFERRAL_KEY', hash('sha512', '')); //Random key. Used for encrypting tr
 define('REFERRAL_SEND_EMAIL', false); // Whether to send invite emails for referrals.
 define('REFERRAL_SITES', ['ABC', 'DEF']);
 define('RECOVERY', false);
+define('RECOVERY_BUFFER', false); // is buffer from previous site restituted
 define('GRANDFATHER_NO_SOURCE', strtotime('1970-01-01')); // End date to ignore source flag.
 define('GRANDFATHER_OLD_SOURCE', strtotime('1970-01-01')); // End date to allow source flag from previous site.
 define('MAX_PREV_TORRENT_ID', 0); // Lowest torrent ID of previous site incarnation.
@@ -103,6 +104,9 @@ define('HELP_FORUM_ID', 3); // ID of help forum
 define('HELP_RESOLVED_FORUM_ID', 44); // ID of forum to send resolved help threads when resolve button is pressed in HELP_FORUM_ID
 define('BUGS_FORUM_ID', 6); // ID of bug reports forum
 define('BUGS_RESOLVED_FORUM_ID', 14); // ID of forum to send resolved bug reports when resolve button is pressed in BUGS_FORUM_ID
+define('AOTM_FORUM_ID', 51); // ID of the Album of The Month forum
+define('VANITY_HOUSE_FORUM_ID', 18); // Vanity House forum
+define('CLIENT_WHITELIST_FORUM_ID', 680); // Client whitelist suggestion forum
 
 if (!defined('FEATURE_EMAIL_REENABLE')) {
     define('FEATURE_EMAIL_REENABLE', true);
@@ -230,13 +234,16 @@ $CollageCats = [
 ];
 
 $ReleaseTypes = [
-    1 => 'Album',
-    3 => 'Soundtrack',
-    5 => 'EP',
-    6 => 'Anthology',
-    7 => 'Compilation',
-    9 => 'Single',
+    1  => 'Album',
+    3  => 'Soundtrack',
+    5  => 'EP',
+    6  => 'Anthology',
+    7  => 'Compilation',
+    8  => 'Sampler',
+    9  => 'Single',
+    10 => 'Demo',
     11 => 'Live album',
+    12 => 'Split',
     13 => 'Remix',
     14 => 'Bootleg',
     15 => 'Interview',
@@ -407,3 +414,8 @@ define('SITELINK_REGEX', RESOURCE_REGEX.'(ssl.)?'.preg_quote(NONSSL_SITE_URL, '/
 define('TORRENT_REGEX', SITELINK_REGEX.'\/torrents\.php\?(.*&)?torrentid=(\d+)'); // torrentid = group 4
 define('TORRENT_GROUP_REGEX', SITELINK_REGEX.'\/torrents\.php\?(.*&)?id=(\d+)'); // id = group 4
 define('ARTIST_REGEX', SITELINK_REGEX.'\/artist\.php\?(.*&)?id=(\d+)'); // id = group 4
+
+define('DONOR_RANK_PRICE', 10);
+define('DONOR_FIRST_INVITE_COUNT', 2);
+
+define('TAG_OFFICIAL_COLUMNS', 4);

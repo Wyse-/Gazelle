@@ -2,7 +2,45 @@
 
 namespace Gazelle;
 
-class Report {
+class Report extends Base {
+
+    public static function openCount(\DB_MYSQL $db, \CACHE $cache) {
+        if (($count = $cache->get_value('num_torrent_reportsv2')) === false) {
+            $count = $db->scalar("
+                SELECT count(*)
+                FROM reportsv2
+                WHERE Status = 'New'
+            ");
+            $cache->cache_value('num_torrent_reportsv2', $count, 3600 * 6);
+        }
+        return $count;
+    }
+
+    public static function otherCount(\DB_MYSQL $db, \CACHE $cache) {
+        if (($count = $cache->get_value('num_other_reports')) === false) {
+            $count = $db->scalar("
+                SELECT count(*)
+                FROM reports
+                WHERE Status = 'New'
+            ");
+            $cache->cache_value('num_other_reports', $count, 3600 * 6);
+        }
+        return $count;
+    }
+
+    public static function forumCount(\DB_MYSQL $db, \CACHE $cache) {
+        if (($count = $cache->get_value('num_forum_reports')) === false) {
+            $count = $db->scalar("
+                SELECT count(*)
+                FROM reports
+                WHERE Status = 'New'
+                    AND Type IN ('artist_comment', 'collages_comment', 'post', 'requests_comment', 'thread', 'torrents_comment')
+            ");
+            $cache->cache_value('num_forum_reports', $count, 3600 * 6);
+        }
+        return $count;
+    }
+
     public static function search(\DB_MYSQL $db, array $filter) {
         $cond = [];
         $args = [];
@@ -17,7 +55,7 @@ class Report {
             $args[] = self::username2id($db, $filter['handler']);
         }
         if (array_key_exists('report-type', $filter)) {
-            $cond[] = 'r.Type in (' . implode(', ', array_fill(0, count($filter['report-type']), '?')) . ')';
+            $cond[] = 'r.Type in (' . placeholders($filter['report-type']) . ')';
             $args = array_merge($args, $filter['report-type']);
         }
         if (array_key_exists('dt-from', $filter)) {

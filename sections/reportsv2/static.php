@@ -249,6 +249,7 @@ if (count($Reports) === 0) {
     </div>
 <?php
 } else {
+    $ripFiler = new \Gazelle\File\RipLog($DB, $Cache);
     foreach ($Reports as $Report) {
 
         list($ReportID, $ReporterID, $ReporterName, $TorrentID, $Type, $UserComment, $ResolverID,
@@ -530,10 +531,10 @@ if (count($Reports) === 0) {
 <?php           if ($HasLog || $ExtraHasLog) { ?>
                 <tr>
                     <td class="label">Logfiles:</td>
-                    <td>
+                    <td colspan="3">
                         <table><tr><td>Reported</td><td>Relevant</td></tr><tr>
                             <td width="50%" style="vertical-align: top; max-width: 500px;">
-<?php               $log = new \Gazelle\Torrent\Log($DB, $Cache, $TorrentID);
+<?php               $log = new \Gazelle\Torrent\Log($TorrentID);
                     $details = $log->logDetails(); ?>
                                 <ul class="nobullet logdetails">
 <?php               if (!count($details)) { ?>
@@ -553,7 +554,8 @@ if (count($Reports) === 0) {
                                 <li class="nobr"><?= $s ?></li>
 <?php                       } ?>
                                 <li><span class="nobr"><strong>Raw logfile #<?= $logId ?></strong>:
-                                    </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?= file_get_contents(sprintf("%s/logs/%d_%d.log", SERVER_ROOT_LIVE, $TorrentID, $logId)) ?></pre></li>
+                                    </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?=
+                                        $ripFiler->get([$TorrentID, $logId]) ?></pre></li>
                                 <li><span class="nobr"><strong>HTML logfile #<?= $logId ?></strong>:
                                     </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?= $info['log'] ?></pre></li>
 <?php                   }
@@ -561,7 +563,7 @@ if (count($Reports) === 0) {
                                 </ul>
                             </td>
                             <td width="50%" style="vertical-align: top; max-width: 500px;">
-<?php               $log = new \Gazelle\Torrent\Log($DB, $Cache, $ExtraID);
+<?php               $log = new \Gazelle\Torrent\Log($ExtraID);
                     $details = $log->logDetails(); ?>
                                 <ul class="nobullet logdetails">
 <?php               if (!count($details)) { ?>
@@ -581,7 +583,8 @@ if (count($Reports) === 0) {
                                 <li class="nobr"><?= $s ?></li>
 <?php                       } ?>
                                 <li><span class="nobr"><strong>Raw logfile #<?= $logId ?></strong>:
-                                    </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?= file_get_contents(sprintf("%s/logs/%d_%d.log", SERVER_ROOT_LIVE, $ExtraID, $logId)) ?></pre></li>
+                                    </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?=
+                                        $ripFiler->get([$ExtraID, $logId]) ?></pre></li>
                                 <li><span class="nobr"><strong>HTML logfile #<?= $logId ?></strong>:
                                     </span><a href="javascript:void(0);" onclick="BBCode.spoiler(this);">Show</a><pre class="hidden"><?= $info['log'] ?></pre></li>
 <?php                   }

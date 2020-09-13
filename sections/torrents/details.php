@@ -15,7 +15,7 @@ if (!empty($_GET['revisionid']) && is_number($_GET['revisionid'])) {
 }
 
 include(SERVER_ROOT.'/sections/torrents/functions.php');
-$TorrentCache = get_group_info($GroupID, true, $RevisionID);
+$TorrentCache = get_group_info($GroupID, $RevisionID);
 $TorrentDetails = $TorrentCache[0];
 $TorrentList = $TorrentCache[1];
 
@@ -85,8 +85,10 @@ if (!$CoverArt) {
 // Comments (must be loaded before View::show_header so that subscriptions and quote notifications are handled properly)
 list($NumComments, $Page, $Thread, $LastRead) = Comments::load('torrents', $GroupID);
 
+$subscription = new \Gazelle\Manager\Subscription($LoggedUser['ID']);
+
 // Start output
-View::show_header($Title, 'browse,comments,torrent,bbcode,recommend,cover_art,subscriptions');
+View::show_header($Title, 'browse,comments,torrent,bbcode,cover_art,subscriptions');
 ?>
 <div class="thin">
     <div class="header">
@@ -104,16 +106,16 @@ if ($RevisionID && check_perms('site_edit_wiki')) { ?>
             <a href="torrents.php?action=revert&amp;groupid=<?=$GroupID ?>&amp;revisionid=<?=$RevisionID ?>&amp;auth=<?=$LoggedUser['AuthKey']?>" class="brackets">Revert to this revision</a>
 <?php
 }
-if (Bookmarks::has_bookmarked('torrent', $GroupID)) {
-?>
+$bookmark = new \Gazelle\Bookmark;
+if ($bookmark->isTorrentBookmarked($LoggedUser['ID'], $GroupID)) { ?>
             <a href="#" id="bookmarklink_torrent_<?=$GroupID?>" class="remove_bookmark brackets" onclick="Unbookmark('torrent', <?=$GroupID?>, 'Bookmark'); return false;">Remove bookmark</a>
 <?php
 } else { ?>
             <a href="#" id="bookmarklink_torrent_<?=$GroupID?>" class="add_bookmark brackets" onclick="Bookmark('torrent', <?=$GroupID?>, 'Remove bookmark'); return false;">Bookmark</a>
 <?php
 } ?>
-            <a href="#" id="subscribelink_torrents<?=$GroupID?>" class="brackets" onclick="SubscribeComments('torrents', <?=$GroupID?>); return false;"><?=Subscriptions::has_subscribed_comments('torrents', $GroupID) !== false ? 'Unsubscribe' : 'Subscribe'?></a>
-<!-- <a href="#" id="recommend" class="brackets">Recommend</a> -->
+            <a href="#" id="subscribelink_torrents<?=$GroupID?>" class="brackets" onclick="SubscribeComments('torrents', <?=$GroupID?>); return false;"><?=
+                $subscription->isSubscribedComments('torrents', $GroupID) ? 'Unsubscribe' : 'Subscribe'?></a>
 <?php
 if ($Categories[$GroupCategoryID-1] == 'Music') { ?>
             <a href="upload.php?groupid=<?=$GroupID?>" class="brackets">Add format</a>
@@ -253,8 +255,10 @@ if ($Categories[$GroupCategoryID - 1] == 'Music') {
                     <?= Artists::display_artist($Artist) ?>&lrm;
 <?php
                     if (check_perms('torrents_edit')) {
-    ?>                (<span class="tooltip" title="Artist alias ID"><?php $a = new \Gazelle\Artist(G::$DB, G::$Cache, $Artist['id']); echo $a->get_alias($Artist['name']) ?></span>)&nbsp;
-                        <span class="remove remove_artist"><a href="javascript:void(0);" onclick="ajax.get('torrents.php?action=delete_alias&amp;auth=' + authkey + '&amp;groupid=<?=$GroupID?>&amp;artistid=<?=$Artist['id']?>&amp;importance=<?=$s['offset']?>'); this.parentNode.parentNode.style.display = 'none';" class="brackets tooltip" title="Remove <?= $s['role'] ?>">X</a></span>
+    ?>                (<span class="tooltip" title="Artist alias ID"><?php
+            $a = new \Gazelle\Artist($Artist['id']);
+            echo $a->getAlias($Artist['name'])
+                        ?></span>)&nbsp;<span class="remove remove_artist"><a href="javascript:void(0);" onclick="ajax.get('torrents.php?action=delete_alias&amp;auth=' + authkey + '&amp;groupid=<?=$GroupID?>&amp;artistid=<?=$Artist['id']?>&amp;importance=<?=$s['offset']?>'); this.parentNode.parentNode.style.display = 'none';" class="brackets tooltip" title="Remove <?= $s['role'] ?>">X</a></span>
     <?php           } ?>
                 </li>
 <?php
@@ -406,6 +410,7 @@ foreach ($TorrentList as $t) {
 }
 
 $LastMedia = null;
+$UnknownCounter = 0;
 foreach ($TorrentList as $Torrent) {
     list($TorrentID, $Media, $Format, $Encoding, $Remastered, $RemasterYear,
         $RemasterTitle, $RemasterRecordLabel, $RemasterCatalogueNumber, $Scene,
@@ -418,7 +423,9 @@ foreach ($TorrentList as $Torrent) {
     if ($is_deleted && count($TorrentList) > 1) {
         continue;
     }
-    $FirstUnknown = ($Remastered && !$RemasterYear);
+    if ($Remastered && !$RemasterYear) {
+        $UnknownCounter++;
+    }
 
     unset($ReportedTimes);
     $Reports = Torrents::get_reports($TorrentID);
@@ -492,11 +499,10 @@ foreach ($TorrentList as $Torrent) {
         || $RemasterYear != $LastRemasterYear
         || $RemasterRecordLabel != $LastRemasterRecordLabel
         || $RemasterCatalogueNumber != $LastRemasterCatalogueNumber
-        || $FirstUnknown
+        || $UnknownCounter === 1
         || $Media != $LastMedia)) {
 
         $EditionID++;
-
 ?>
         <tr class="releases_<?=$ReleaseType?> groupid_<?=$GroupID?> edition group_torrent">
             <td colspan="5" class="edition_info"><strong><a href="#" onclick="toggle_edition(<?=$GroupID?>, <?=$EditionID?>, this, event);" title="Collapse this edition. Hold [Command] <em>(Mac)</em> or [Ctrl] <em>(PC)</em> while clicking to collapse all editions in this torrent group." class="tooltip">&minus;</a> <?=Torrents::edition_string($Torrent, $TorrentDetails)?></strong></td>
@@ -566,6 +572,7 @@ foreach ($TorrentList as $Torrent) {
         if (time() - strtotime($LastActive) > 1576800000) { ?>
                             <br />Last active: Never
 <?php
+        // If last active is >= 2 weeks ago, output in bold
         } elseif ($LastActive != '0000-00-00 00:00:00' && time() - strtotime($LastActive) >= 1209600) { ?>
                             <br /><strong>Last active: <?=time_diff($LastActive); ?></strong>
 <?php   } else { ?>

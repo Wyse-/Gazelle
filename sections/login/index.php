@@ -21,7 +21,8 @@ if (BLOCK_OPERA_MINI && isset($_SERVER['HTTP_X_OPERAMINI_PHONE'])) {
 }
 
 // Check if IP is banned
-if (Tools::site_ban_ip($_SERVER['REMOTE_ADDR'])) {
+$IPv4Man = new \Gazelle\Manager\IPv4;
+if ($IPv4Man->isBanned($_SERVER['REMOTE_ADDR'])) {
     error('Your IP address has been banned.');
 }
 
@@ -69,7 +70,7 @@ if (isset($_REQUEST['act']) && $_REQUEST['act'] == 'recover') {
                             users_info AS i
                         SET
                             i.ResetKey = '',
-                            i.ResetExpires = '0000-00-00 00:00:00',
+                            i.ResetExpires = NULL,
                             m.PassHash = ?
                         WHERE i.UserID = m.ID
                             AND m.ID = ?
@@ -97,7 +98,7 @@ if (isset($_REQUEST['act']) && $_REQUEST['act'] == 'recover') {
                 $DB->prepared_query("
                     UPDATE users_info SET
                         ResetKey = '',
-                        ResetExpires = '0000-00-00 00:00:00'
+                        ResetExpires = NULL
                     WHERE UserID = ?
                     ", $UserID
                 );
@@ -188,7 +189,7 @@ elseif (isset($_REQUEST['act']) && $_REQUEST['act'] === '2fa_recovery') {
         list($UserID, $PermissionID, $CustomPermissions, $PassHash, $Enabled, $TFAKey, $Recovery) = $_SESSION['temp_user_data'];
         $Recovery = (!empty($Recovery)) ? unserialize($Recovery) : [];
         if (($Key = array_search($_POST['2fa_recovery_key'], $Recovery)) !== false) {
-            $SessionID = Users::make_secret();
+            $SessionID = randomString();
             $Cookie = Crypto::encrypt(Crypto::encrypt($SessionID . '|~|' . $UserID, ENCKEY), ENCKEY);
             if ($_SESSION['temp_stay_logged']) {
                 $KeepLogged = '1';
@@ -260,13 +261,13 @@ elseif (isset($_REQUEST['act']) && $_REQUEST['act'] === '2fa_recovery') {
                 ', $_SERVER['REMOTE_ADDR']
             );
             list($AttemptID, $Attempts, $Bans, $BannedUntil) = $DB->next_record();
+            if ($BannedUntil == '') {
+                $BannedUntil = null;
+            }
 
             // Function to log a user's login attempt
             function log_attempt($UserID) {
                 global $DB, $Cache, $AttemptID, $Attempts, $Bans, $BannedUntil;
-                $IPStr = $_SERVER['REMOTE_ADDR'];
-                $IPA = substr($IPStr, 0, strcspn($IPStr, '.'));
-                $IP = Tools::ip_to_unsigned($IPStr);
                 if ($AttemptID) { // User has attempted to log in recently
                     $Attempts++;
                     if ($Attempts > 5) { // Only 6 allowed login attempts, ban user's IP
@@ -282,53 +283,27 @@ elseif (isset($_REQUEST['act']) && $_REQUEST['act'] === '2fa_recovery') {
                         );
 
                         if ($Bans > 9) { // Automated bruteforce prevention
-                            $DB->prepared_query('
-                                SELECT Reason
-                                FROM ip_bans
-                                WHERE ? BETWEEN FromIP AND ToIP
-                                ', $IP
-                            );
-                            if ($DB->has_results()) {
-                                //Ban exists already, only add new entry if not for same reason
-                                list($Reason) = $DB->next_record(MYSQLI_BOTH, false);
-                                if ($Reason != 'Automated ban per >60 failed login attempts') {
-                                    $DB->prepared_query("
-                                        UPDATE ip_bans SET
-                                            Reason = CONCAT('Automated ban per >60 failed login attempts AND ', Reason)
-                                        WHERE FromIP = ?
-                                            AND ToIP = ?
-                                        ", $IP, $IP
-                                    );
-                                }
-                            } else {
-                                //No ban
-                                $DB->prepared_query("
-                                    INSERT IGNORE INTO ip_bans
-                                           (FromIP, ToIP, Reason)
-                                    VALUES (?,      ?,    'Automated ban per >60 failed login attempts'
-                                    ", $IP, $IP
-                                );
-                                $Cache->delete_value("ip_bans_$IPA");
-                            }
+                            $IPv4Man = new \Gazelle\Manager\IPv4;
+                            $IPv4Man->createBan($UserID, $IPStr, $IPStr, 'Automated ban per >60 failed login attempts');
                         }
                     } else {
                         // User has attempted fewer than 6 logins
                         $DB->prepared_query('
                             UPDATE login_attempts SET
                                 LastAttempt = now(),
-                                BannedUntil = ?,
+                                BannedUntil = NULL,
                                 Attempts = ?
                             WHERE ID = ?
-                            ', '0000-00-00 00:00:00', $Attempts, $AttemptID
+                            ', $Attempts, $AttemptID
                         );
                     }
                 } else { // User has not attempted to log in recently
                     $Attempts = 1;
                     $DB->prepared_query('
                         INSERT INTO login_attempts
-                               (UserID, IP, Attempts, LastAttempt)
-                        VALUES (?,      ?,  ?,        now())
-                        ', $UserID, $IPStr, 1
+                               (UserID, IP)
+                        VALUES (?,      ?)
+                        ', $UserID, $IPStr
                     );
                 }
             } // end log_attempt function
@@ -356,7 +331,7 @@ elseif (isset($_REQUEST['act']) && $_REQUEST['act'] === '2fa') {
             unset($_SESSION['temp_stay_logged'], $_SESSION['temp_user_data']);
             header('Location: login.php?invalid2fa');
         } else {
-            $SessionID = Users::make_secret();
+            $SessionID = randomString();
             $Cookie = Crypto::encrypt(Crypto::encrypt($SessionID . '|~|' . $UserID, ENCKEY), ENCKEY);
 
             if ($_SESSION['temp_stay_logged']) {
@@ -438,8 +413,6 @@ else {
     function log_attempt($UserID) {
         global $DB, $Cache, $AttemptID, $Attempts, $Bans, $BannedUntil;
         $IPStr = $_SERVER['REMOTE_ADDR'];
-        $IPA = substr($IPStr, 0, strcspn($IPStr, '.'));
-        $IP = Tools::ip_to_unsigned($IPStr);
         if ($AttemptID) { // User has attempted to log in recently
             $Attempts++;
             if ($Attempts > 5) { // Only 6 allowed login attempts, ban user's IP
@@ -455,44 +428,18 @@ else {
                 );
 
                 if ($Bans > 9) { // Automated bruteforce prevention
-                    $DB->prepared_query('
-                        SELECT Reason
-                        FROM ip_bans
-                        WHERE ? BETWEEN FromIP AND ToIP
-                        ', $IP
-                    );
-                    if ($DB->has_results()) {
-                        //Ban exists already, only add new entry if not for same reason
-                        list($Reason) = $DB->next_record(MYSQLI_BOTH, false);
-                        if ($Reason != 'Automated ban per >60 failed login attempts') {
-                            $DB->prepared_query("
-                                UPDATE ip_bans
-                                SET Reason = CONCAT('Automated ban per >60 failed login attempts AND ', Reason)
-                                WHERE FromIP = ?
-                                    AND ToIP = ?
-                                ", $IP, $IP
-                            );
-                        }
-                    } else {
-                        //No ban
-                        $DB->prepared_query("
-                            INSERT IGNORE INTO ip_bans
-                                   (FromIP, ToIP, Reason)
-                            VALUES (?,      ?,    'Automated ban per >60 failed login attempts'
-                            ", $IP, $IP
-                        );
-                        $Cache->delete_value("ip_bans_$IPA");
-                    }
+                    $IPv4Man = new \Gazelle\Manager\IPv4;
+                    $IPv4Man->createBan($UserID, $IPStr, $IPStr, 'Automated ban per >60 failed login attempts');
                 }
             } else {
                 // User has attempted fewer than 6 logins
                 $DB->prepared_query('
                     UPDATE login_attempts SET
                         LastAttempt = now(),
-                        BannedUntil = ?,
+                        BannedUntil = NULL,
                         Attempts = ?
                     WHERE ID = ?
-                    ', '0000-00-00 00:00:00', $Attempts, $AttemptID
+                    ', $Attempts, $AttemptID
                 );
             }
         } else { // User has not attempted to log in recently
@@ -502,8 +449,8 @@ else {
             }
             $DB->prepared_query('
                 INSERT INTO login_attempts
-                       (UserID, IP, Attempts, LastAttempt)
-                VALUES (?,      ?,  1,        now())
+                       (UserID, IP)
+                VALUES (?,      ?)
                 ', $UserID, $IPStr
             );
         }
@@ -546,7 +493,7 @@ else {
                     }
 
                     if ($Enabled == 1) {
-                        $SessionID = Users::make_secret();
+                        $SessionID = randomString();
                         $Cookie = Crypto::encrypt(Crypto::encrypt($SessionID . '|~|' . $UserID, ENCKEY), ENCKEY);
 
                         if ($TFAKey) {

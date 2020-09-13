@@ -51,7 +51,7 @@ if (!is_number($TorrentID)) {
     error(0);
 }
 
-$User = new \Gazelle\User($DB, $Cache, $UserID);
+$User = new \Gazelle\User($UserID);
 
 /* uTorrent Remote and various scripts redownload .torrent files periodically.
  * To prevent this retardation from blowing bandwidth etc., let's block it
@@ -108,7 +108,7 @@ $Artists = $Info['Artists'];
  * stop them. Exception: always allowed if they are using FL tokens.
  */
 if (!(isset($_REQUEST['usetoken']) && $_REQUEST['usetoken']) && $TorrentUploaderID != $UserID) {
-    $PRL = new \Gazelle\PermissionRateLimit($DB, $Cache);
+    $PRL = new \Gazelle\PermissionRateLimit;
     if (!$PRL->safeFactor($User)) {
         if (!$PRL->safeOvershoot($User)) {
             $DB->prepared_query('
@@ -163,12 +163,10 @@ if ($_REQUEST['usetoken'] && $FreeTorrent == '0') {
         }
         $TokensToUse = ceil($Size / BYTES_PER_FREELEECH_TOKEN);
         $DB->prepared_query('
-            UPDATE users_main um
-            INNER JOIN user_flt uf ON (uf.user_id = um.ID) SET
-                um.FLTokens = um.FLTokens - ?,
-                uf.tokens = uf.tokens - ?
-            WHERE um.FLTokens >= ? AND um.ID = ?
-            ', $TokensToUse, $TokensToUse, $TokensToUse, $UserID
+            UPDATE user_flt SET
+                tokens = tokens - ?
+            WHERE tokens >= ? AND user_id = ?
+            ', $TokensToUse, $TokensToUse, $UserID
         );
         if ($DB->affected_rows() == 0) {
             error('You do not have any freeleech tokens left. Please use the regular DL link.');
@@ -179,12 +177,10 @@ if ($_REQUEST['usetoken'] && $FreeTorrent == '0') {
             error('Sorry! An error occurred while trying to register your token. Most often, this is due to the tracker being down or under heavy load. Please try again later.');
             // recredit the tokens we just subtracted
             $DB->prepared_query('
-                UPDATE users_main um
-                INNER JOIN user_flt uf ON (uf.user_id = um.ID) SET
-                    um.FLTokens = um.FLTokens + ?,
-                    uf.tokens = uf.tokens + ?
-                WHERE um.ID = ?
-                ', $TokensToUse, $TokensToUse, $UserID
+                UPDATE user_flt SET
+                    tokens = tokens + ?
+                WHERE user_id = ?
+                ', $TokensToUse, $UserID
             );
         }
 
@@ -212,13 +208,9 @@ $DB->prepared_query("
     VALUES (?, ?, now())
     ", $UserID, $TorrentID);
 
-$DB->prepared_query("
-    SELECT File
-    FROM torrents_files
-    WHERE TorrentID = ?", $TorrentID);
-
 Torrents::set_snatch_update_time($UserID, Torrents::SNATCHED_UPDATE_AFTERDL);
-list($Contents) = $DB->next_record(MYSQLI_NUM, false);
+$filer = new \Gazelle\File\Torrent;
+$Contents = $filer->get($TorrentID);
 $Cache->delete_value('user_rlim_' . $UserID);
 
 $FileName = TorrentsDL::construct_file_name($Info['PlainArtists'], $Name, $Year, $Media, $Format, $Encoding, $TorrentID, $DownloadAlt);

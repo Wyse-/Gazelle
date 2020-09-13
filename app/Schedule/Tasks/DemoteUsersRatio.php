@@ -6,27 +6,25 @@ class DemoteUsersRatio extends \Gazelle\Schedule\Task
 {
     public function run()
     {
-        // TODO: refactor this into the config.
-        $this->demote(USER, 0.65, 0, [
-            MEMBER, POWER, ELITE, TORRENT_MASTER, POWER_TM, ELITE_TM, ULTIMATE_TM
-        ]);
-        $this->demote(MEMBER, 0.95, 25 * 1024 * 1024 * 1024, [
-            POWER, ELITE, TORRENT_MASTER, POWER_TM, ELITE_TM, ULTIMATE_TM
-        ]);
+        foreach (\Gazelle\User::demotionCriteria() as $criteria) {
+            $this->demote($criteria['To'], $criteria['Ratio'], $criteria['Upload'], $criteria['From']);
+        }
     }
 
     private function demote(int $newClass, float $ratio, int $upload, array $demoteClasses) {
         $classString = \Users::make_class_string($newClass);
-        $placeholders = implode(', ', array_fill(0, count($demoteClasses), '?'));
+        $placeholders = placeholders($demoteClasses);
         $query = $this->db->prepared_query("
             SELECT ID
             FROM users_main um
             INNER JOIN users_leech_stats AS uls ON (uls.UserID = um.ID)
             LEFT JOIN
             (
-                SELECT UserID, SUM(Bounty) AS Bounty
-                FROM requests_votes
-                GROUP BY UserID
+                SELECT rv.UserID, sum(Bounty) AS Bounty
+                FROM requests_votes rv
+                INNER JOIN requests r ON (r.ID = rv.RequestID)
+                WHERE r.UserID != r.FillerID
+                GROUP BY rv.UserID
             ) b ON (b.UserID = um.ID)
             WHERE um.PermissionID IN ($placeholders)
                 AND (
@@ -42,13 +40,15 @@ class DemoteUsersRatio extends \Gazelle\Schedule\Task
             INNER JOIN users_leech_stats AS uls ON (uls.UserID = um.ID)
             LEFT JOIN
             (
-                SELECT UserID, SUM(Bounty) AS Bounty
-                FROM requests_votes
-                GROUP BY UserID
+                SELECT rv.UserID, sum(Bounty) AS Bounty
+                FROM requests_votes rv
+                INNER JOIN requests r ON (r.ID = rv.RequestID)
+                WHERE r.UserID != r.FillerID
+                GROUP BY rv.UserID
             ) b ON (b.UserID = um.ID)
             SET
                 um.PermissionID = ?,
-                ui.AdminComment = CONCAT(now(), ' - Class changed to ', ?, ' by System\n\n', ui.AdminComment)
+                ui.AdminComment = concat(now(), ' - Class changed to ', ?, ' by System\n\n', ui.AdminComment)
             WHERE um.PermissionID IN ($placeholders)
                 AND (
                     (uls.Downloaded > 0 AND uls.Uploaded / uls.Downloaded < ?)
